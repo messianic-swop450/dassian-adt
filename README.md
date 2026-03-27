@@ -100,6 +100,41 @@ Multiple systems? Add one entry per system:
 }
 ```
 
+### HTTP Mode (Team Deployment)
+
+For team-wide access, run the server as a centralized HTTP service:
+
+```bash
+MCP_TRANSPORT=http MCP_HTTP_PORT=3000 \
+  SAP_URL=https://your-sap-server:44300 \
+  SAP_USER=SERVICE_USER \
+  SAP_PASSWORD=... \
+  node dist/index.js
+```
+
+Each client gets its own MCP session (and SAP session). Health check at `http://your-server:3000/health`.
+
+Connect from Claude Code using the remote URL:
+
+```json
+{
+  "mcpServers": {
+    "abap": {
+      "type": "url",
+      "url": "http://your-server:3000/mcp"
+    }
+  }
+}
+```
+
+Or register as a team integration on claude.ai for the whole org.
+
+| Env Var | Default | Description |
+|---------|---------|-------------|
+| `MCP_TRANSPORT` | `stdio` | Transport mode: `stdio` (local) or `http` (remote) |
+| `MCP_HTTP_PORT` | `3000` | HTTP server port |
+| `MCP_HTTP_PATH` | `/mcp` | MCP endpoint path |
+
 ### Test
 
 ```bash

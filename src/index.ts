@@ -3,6 +3,7 @@
 import { config } from 'dotenv';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -10,6 +11,8 @@ import {
   ErrorCode
 } from '@modelcontextprotocol/sdk/types.js';
 import { ADTClient, session_types } from 'abap-adt-api';
+import { createServer } from 'http';
+import { randomUUID } from 'crypto';
 import path from 'path';
 
 import { SourceHandlers }    from './handlers/SourceHandlers.js';
@@ -36,7 +39,7 @@ export class AbapAdtServer extends Server {
 
   constructor() {
     super(
-      { name: 'mcp-abap-abap-adt-api', version: '2.0.0' },
+      { name: 'dassian-adt', version: '2.0.0' },
       { capabilities: { tools: {} } }
     );
 
@@ -119,18 +122,122 @@ export class AbapAdtServer extends Server {
     });
   }
 
-  async run() {
+  /**
+   * Run in stdio mode (default). Each Claude Code instance spawns its own server process.
+   * Use this for local development or single-user setups.
+   */
+  async runStdio() {
     const transport = new StdioServerTransport();
     await this.connect(transport);
-    // Log client capabilities so we can see if elicitation is supported
     const clientCaps = this.getClientCapabilities();
-    console.error('ABAP ADT MCP server v2.0 running on stdio');
+    console.error('dassian-adt v2.0 running on stdio');
     console.error('Client capabilities:', JSON.stringify(clientCaps, null, 2));
 
     process.on('SIGINT',  async () => { await this.close(); process.exit(0); });
     process.on('SIGTERM', async () => { await this.close(); process.exit(0); });
   }
+
+  /**
+   * Run in HTTP mode. A single server process handles multiple clients via Streamable HTTP.
+   * Use this for team-wide deployment — register the URL as a remote MCP integration.
+   *
+   * Set MCP_HTTP_PORT (default 3000) and optionally MCP_HTTP_PATH (default /mcp).
+   */
+  async runHttp() {
+    const port = parseInt(process.env.MCP_HTTP_PORT || '3000', 10);
+    const mcpPath = process.env.MCP_HTTP_PATH || '/mcp';
+
+    // Per-session transport map — each MCP client gets its own session
+    const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: AbapAdtServer }>();
+
+    const httpServer = createServer(async (req, res) => {
+      // CORS headers for browser-based clients
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id');
+      res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      // Health check endpoint
+      if (req.url === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', sessions: sessions.size }));
+        return;
+      }
+
+      // Only handle the MCP path
+      if (req.url !== mcpPath && !req.url?.startsWith(mcpPath + '?')) {
+        res.writeHead(404);
+        res.end('Not found');
+        return;
+      }
+
+      // Check for existing session
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+      if (sessionId && sessions.has(sessionId)) {
+        // Existing session — route to its transport
+        const session = sessions.get(sessionId)!;
+        await session.transport.handleRequest(req, res);
+        return;
+      }
+
+      if (sessionId && !sessions.has(sessionId)) {
+        // Invalid session ID
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Session not found' }));
+        return;
+      }
+
+      // New session — create transport and server instance
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+      });
+
+      // Each session gets its own AbapAdtServer with its own SAP connection
+      const sessionServer = new AbapAdtServer();
+      await sessionServer.connect(transport);
+
+      // Store session after connection (sessionId is set during the init handshake)
+      transport.onclose = () => {
+        if (transport.sessionId) {
+          sessions.delete(transport.sessionId);
+          console.error(`[HTTP] Session closed: ${transport.sessionId} (${sessions.size} active)`);
+        }
+      };
+
+      // Handle the initial request (triggers the init handshake which sets sessionId)
+      await transport.handleRequest(req, res);
+
+      // Store session AFTER the request is handled (sessionId is now set)
+      if (transport.sessionId) {
+        sessions.set(transport.sessionId, { transport, server: sessionServer });
+        console.error(`[HTTP] New session: ${transport.sessionId} (${sessions.size} active)`);
+      }
+    });
+
+    httpServer.listen(port, () => {
+      console.error(`dassian-adt v2.0 running on http://0.0.0.0:${port}${mcpPath}`);
+      console.error(`Health check: http://0.0.0.0:${port}/health`);
+      console.error(`SAP system: ${process.env.SAP_URL}`);
+    });
+
+    process.on('SIGINT',  () => { httpServer.close(); process.exit(0); });
+    process.on('SIGTERM', () => { httpServer.close(); process.exit(0); });
+  }
 }
 
+// Determine transport mode from environment
 const server = new AbapAdtServer();
-server.run().catch(console.error);
+const mode = process.env.MCP_TRANSPORT || 'stdio';
+
+if (mode === 'http') {
+  server.runHttp().catch(console.error);
+} else {
+  server.runStdio().catch(console.error);
+}
