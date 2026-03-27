@@ -276,8 +276,21 @@ async function runHttp() {
       return;
     }
 
+    // Existing pending session — user hasn't logged in yet.
+    // Return a clear JSON error directing them to the login page.
+    if (sessionId && pendingSessions.has(sessionId)) {
+      const loginUrl = `/login?session=${encodeURIComponent(sessionId)}`;
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        error: 'Authentication required',
+        message: `SAP login required. Open ${loginUrl} in your browser to connect, then retry.`,
+        loginUrl
+      }));
+      return;
+    }
+
     // Invalid session
-    if (sessionId && !sessions.has(sessionId) && !pendingSessions.has(sessionId)) {
+    if (sessionId && !sessions.has(sessionId)) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Session not found' }));
       return;
@@ -304,23 +317,15 @@ async function runHttp() {
         console.error(`[HTTP] New session: ${transport.sessionId} [${sharedUser}] (${sessions.size} active)`);
       }
     } else {
-      // Per-user auth — check if credentials were already provided
-      // (This handles the case where the user logged in before starting the MCP session)
-      // For now, create the server with credentials if available, otherwise
-      // the session will need to be established after login.
-      //
-      // The MCP handshake needs a connected server. We create a temporary one
-      // to handle the init, then the user logs in, and we have the credentials
-      // for subsequent tool calls.
+      // Per-user auth — the MCP handshake needs a real server to negotiate the session ID.
+      // Check if the user already authenticated (login-before-connect race).
+      // If not, use a temporary server for the handshake, then park the session as pending.
+      // Subsequent requests on a pending session get a clear 401 + login URL (handled above).
 
-      // We need to handle the initial handshake. Create a server with dummy creds
-      // that will fail on tool calls but succeed on init/listTools.
-      // After the user logs in, we'll replace it with a real one.
-
-      // Actually: create the MCP server without SAP creds — it will list tools fine.
-      // Tool calls will fail with "open /login to connect" until creds are provided.
-      const server = new AbapAdtServer(sapUrl!, 'PENDING', 'PENDING', sapClient, sapLanguage);
-      await server.connect(transport);
+      // For the initial handshake we need a connected server. The handshake itself (initialize,
+      // listTools) doesn't touch SAP, so dummy creds are fine for this single request.
+      const handshakeServer = new AbapAdtServer(sapUrl!, '_HANDSHAKE_', '_HANDSHAKE_', sapClient, sapLanguage);
+      await handshakeServer.connect(transport);
 
       transport.onclose = () => {
         if (transport.sessionId) {
