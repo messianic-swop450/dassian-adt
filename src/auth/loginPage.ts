@@ -1,10 +1,20 @@
+/** Escape HTML special characters to prevent XSS. */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /**
  * Self-contained login page HTML. Served at /login?session=<id>.
  * The user enters SAP credentials, the form POSTs back to the server.
  * Credentials never pass through Claude or the LLM context.
  */
 export function renderLoginPage(sapUrl: string, sessionId: string, error?: string): string {
-  const host = new URL(sapUrl).hostname.split('.')[0].toUpperCase(); // e.g. D25APP → D25APP
+  const host = escapeHtml(new URL(sapUrl).hostname.split('.')[0].toUpperCase()); // e.g. D25APP → D25APP
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -33,9 +43,9 @@ export function renderLoginPage(sapUrl: string, sessionId: string, error?: strin
   <div class="card">
     <h1>dassian-adt</h1>
     <p class="subtitle">Connect to SAP system <span class="system">${host}</span></p>
-    ${error ? `<div class="error">${error}</div>` : ''}
+    ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
     <form method="POST" action="/login">
-      <input type="hidden" name="session" value="${sessionId}">
+      <input type="hidden" name="session" value="${escapeHtml(sessionId)}">
       <label for="username">SAP Username</label>
       <input type="text" id="username" name="username" placeholder="e.g. PMCFARLING" required autocomplete="username" autofocus>
       <label for="password">SAP Password</label>
