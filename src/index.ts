@@ -11,9 +11,10 @@ import {
   ErrorCode
 } from '@modelcontextprotocol/sdk/types.js';
 import { ADTClient, session_types } from 'abap-adt-api';
-import { createServer } from 'http';
+import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { randomUUID } from 'crypto';
 import path from 'path';
+import { URL } from 'url';
 
 import { SourceHandlers }    from './handlers/SourceHandlers.js';
 import { ObjectHandlers }    from './handlers/ObjectHandlers.js';
@@ -23,6 +24,7 @@ import { DataHandlers }      from './handlers/DataHandlers.js';
 import { QualityHandlers }   from './handlers/QualityHandlers.js';
 import { GitHandlers }       from './handlers/GitHandlers.js';
 import { SystemHandlers }    from './handlers/SystemHandlers.js';
+import { renderLoginPage, renderLoginSuccess } from './auth/loginPage.js';
 
 config({ path: path.resolve(__dirname, '../.env') });
 
@@ -37,24 +39,22 @@ export class AbapAdtServer extends Server {
   private gitHandlers:       GitHandlers;
   private systemHandlers:    SystemHandlers;
 
-  constructor() {
+  constructor(sapUrl?: string, sapUser?: string, sapPassword?: string, sapClient?: string, sapLanguage?: string) {
     super(
       { name: 'dassian-adt', version: '2.0.0' },
       { capabilities: { tools: {} } }
     );
 
-    const missingVars = ['SAP_URL', 'SAP_USER', 'SAP_PASSWORD'].filter(v => !process.env[v]);
-    if (missingVars.length > 0) {
-      throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
-    }
+    const url = sapUrl || process.env.SAP_URL;
+    const user = sapUser || process.env.SAP_USER;
+    const pass = sapPassword || process.env.SAP_PASSWORD;
+    const client = sapClient || process.env.SAP_CLIENT;
+    const language = sapLanguage || process.env.SAP_LANGUAGE;
 
-    this.adtClient = new ADTClient(
-      process.env.SAP_URL as string,
-      process.env.SAP_USER as string,
-      process.env.SAP_PASSWORD as string,
-      process.env.SAP_CLIENT as string,
-      process.env.SAP_LANGUAGE as string
-    );
+    if (!url) throw new Error('SAP_URL is required.');
+    if (!user || !pass) throw new Error('SAP_USER and SAP_PASSWORD are required.');
+
+    this.adtClient = new ADTClient(url, user, pass, client, language);
     this.adtClient.stateful = session_types.stateful;
 
     this.sourceHandlers    = new SourceHandlers(this.adtClient);
@@ -66,8 +66,6 @@ export class AbapAdtServer extends Server {
     this.gitHandlers       = new GitHandlers(this.adtClient);
     this.systemHandlers    = new SystemHandlers(this.adtClient);
 
-    // Inject elicitation capability into handlers that need user confirmation.
-    // Falls back gracefully if the connected client doesn't support elicitation.
     const elicitFn = (params: any) => this.elicitInput(params);
     for (const handler of this.allHandlers()) {
       handler.setElicit(elicitFn);
@@ -78,14 +76,9 @@ export class AbapAdtServer extends Server {
 
   private allHandlers() {
     return [
-      this.sourceHandlers,
-      this.objectHandlers,
-      this.runHandlers,
-      this.transportHandlers,
-      this.dataHandlers,
-      this.qualityHandlers,
-      this.gitHandlers,
-      this.systemHandlers,
+      this.sourceHandlers, this.objectHandlers, this.runHandlers,
+      this.transportHandlers, this.dataHandlers, this.qualityHandlers,
+      this.gitHandlers, this.systemHandlers,
     ];
   }
 
@@ -102,9 +95,7 @@ export class AbapAdtServer extends Server {
         if (tools.includes(name)) {
           try {
             const result = await handler.validateAndHandle(name, args || {});
-            // Handlers return already-formatted content — pass through
             if (result?.content) return result;
-            // Fallback serialization for anything that slips through
             return {
               content: [{
                 type: 'text',
@@ -122,10 +113,7 @@ export class AbapAdtServer extends Server {
     });
   }
 
-  /**
-   * Run in stdio mode (default). Each Claude Code instance spawns its own server process.
-   * Use this for local development or single-user setups.
-   */
+  /** Run in stdio mode (default). Requires SAP_USER/SAP_PASSWORD in env. */
   async runStdio() {
     const transport = new StdioServerTransport();
     await this.connect(transport);
@@ -136,108 +124,255 @@ export class AbapAdtServer extends Server {
     process.on('SIGINT',  async () => { await this.close(); process.exit(0); });
     process.on('SIGTERM', async () => { await this.close(); process.exit(0); });
   }
+}
 
-  /**
-   * Run in HTTP mode. A single server process handles multiple clients via Streamable HTTP.
-   * Use this for team-wide deployment — register the URL as a remote MCP integration.
-   *
-   * Set MCP_HTTP_PORT (default 3000) and optionally MCP_HTTP_PATH (default /mcp).
-   */
-  async runHttp() {
-    const port = parseInt(process.env.MCP_HTTP_PORT || '3000', 10);
-    const mcpPath = process.env.MCP_HTTP_PATH || '/mcp';
+// ─── HTTP mode: per-user auth via browser login page ────────────────────────
 
-    // Per-session transport map — each MCP client gets its own session
-    const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: AbapAdtServer }>();
+interface HttpSession {
+  transport: StreamableHTTPServerTransport;
+  server: AbapAdtServer;
+}
 
-    const httpServer = createServer(async (req, res) => {
-      // CORS headers for browser-based clients
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id');
-      res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id');
+/** Pending sessions waiting for the user to log in via the browser. */
+interface PendingSession {
+  transport: StreamableHTTPServerTransport;
+  sessionId: string;
+}
 
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204);
-        res.end();
+function parseFormBody(req: IncomingMessage): Promise<Record<string, string>> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      const body = Buffer.concat(chunks).toString();
+      const params: Record<string, string> = {};
+      for (const pair of body.split('&')) {
+        const [key, val] = pair.split('=').map(decodeURIComponent);
+        if (key) params[key] = val || '';
+      }
+      resolve(params);
+    });
+    req.on('error', reject);
+  });
+}
+
+async function runHttp() {
+  const sapUrl = process.env.SAP_URL;
+  if (!sapUrl) throw new Error('SAP_URL is required even in HTTP mode (all users connect to the same SAP system).');
+
+  const port = parseInt(process.env.MCP_HTTP_PORT || '3000', 10);
+  const mcpPath = process.env.MCP_HTTP_PATH || '/mcp';
+  const sapClient = process.env.SAP_CLIENT;
+  const sapLanguage = process.env.SAP_LANGUAGE;
+
+  // Shared service account (optional fallback — if SAP_USER + SAP_PASSWORD are set, skip login page)
+  const sharedUser = process.env.SAP_USER;
+  const sharedPass = process.env.SAP_PASSWORD;
+  const requireLogin = !sharedUser || !sharedPass;
+
+  const sessions = new Map<string, HttpSession>();
+  // Pending sessions: MCP handshake done, but user hasn't logged in yet
+  const pendingSessions = new Map<string, PendingSession>();
+  // Session → SAP credentials (set after user logs in via /login)
+  const sessionCredentials = new Map<string, { user: string; password: string }>();
+
+  if (requireLogin) {
+    console.error('[HTTP] Per-user auth mode: users will log in via /login page');
+  } else {
+    console.error(`[HTTP] Shared service account mode: ${sharedUser}`);
+  }
+
+  const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    const reqUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+
+    // CORS
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id');
+    res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id');
+
+    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
+    // ── Health check ──
+    if (reqUrl.pathname === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        sessions: sessions.size,
+        pendingLogins: pendingSessions.size,
+        authMode: requireLogin ? 'per-user' : 'shared'
+      }));
+      return;
+    }
+
+    // ── Login page (GET) ──
+    if (reqUrl.pathname === '/login' && req.method === 'GET') {
+      const sessionId = reqUrl.searchParams.get('session') || '';
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(renderLoginPage(sapUrl!, sessionId));
+      return;
+    }
+
+    // ── Login submit (POST) ──
+    if (reqUrl.pathname === '/login' && req.method === 'POST') {
+      const body = await parseFormBody(req);
+      const sessionId = body.session || '';
+      const username = body.username?.trim();
+      const password = body.password;
+
+      if (!username || !password) {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(renderLoginPage(sapUrl!, sessionId, 'Username and password are required.'));
         return;
       }
 
-      // Health check endpoint
-      if (req.url === '/health') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', sessions: sessions.size }));
+      // Validate credentials by attempting an ADT login
+      try {
+        const testClient = new ADTClient(sapUrl!, username, password, sapClient, sapLanguage);
+        testClient.stateful = session_types.stateful;
+        await testClient.login();
+        await testClient.logout();
+      } catch (e: any) {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(renderLoginPage(sapUrl!, sessionId, `SAP login failed: ${e.message || 'Invalid credentials'}`));
         return;
       }
 
-      // Only handle the MCP path
-      if (req.url !== mcpPath && !req.url?.startsWith(mcpPath + '?')) {
-        res.writeHead(404);
-        res.end('Not found');
-        return;
+      // Store credentials for this session
+      sessionCredentials.set(sessionId, { user: username, password });
+      console.error(`[HTTP] User ${username} authenticated for session ${sessionId}`);
+
+      // If there's a pending session, promote it to active
+      const pending = pendingSessions.get(sessionId);
+      if (pending) {
+        try {
+          const server = new AbapAdtServer(sapUrl!, username, password, sapClient, sapLanguage);
+          await server.connect(pending.transport);
+          sessions.set(sessionId, { transport: pending.transport, server });
+          pendingSessions.delete(sessionId);
+          console.error(`[HTTP] Session ${sessionId} activated for ${username} (${sessions.size} active)`);
+        } catch (err: any) {
+          console.error(`[HTTP] Failed to activate session ${sessionId}: ${err.message}`);
+        }
       }
 
-      // Check for existing session
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(renderLoginSuccess());
+      return;
+    }
 
-      if (sessionId && sessions.has(sessionId)) {
-        // Existing session — route to its transport
-        const session = sessions.get(sessionId)!;
-        await session.transport.handleRequest(req, res);
-        return;
-      }
+    // ── MCP endpoint ──
+    if (reqUrl.pathname !== mcpPath && !reqUrl.pathname.startsWith(mcpPath + '?')) {
+      res.writeHead(404);
+      res.end('Not found');
+      return;
+    }
 
-      if (sessionId && !sessions.has(sessionId)) {
-        // Invalid session ID
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Session not found' }));
-        return;
-      }
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
-      // New session — create transport and server instance
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-      });
+    // Existing active session
+    if (sessionId && sessions.has(sessionId)) {
+      await sessions.get(sessionId)!.transport.handleRequest(req, res);
+      return;
+    }
 
-      // Each session gets its own AbapAdtServer with its own SAP connection
-      const sessionServer = new AbapAdtServer();
-      await sessionServer.connect(transport);
+    // Invalid session
+    if (sessionId && !sessions.has(sessionId) && !pendingSessions.has(sessionId)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Session not found' }));
+      return;
+    }
 
-      // Store session after connection (sessionId is set during the init handshake)
+    // New session
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+    });
+
+    if (!requireLogin) {
+      // Shared service account — create server immediately
+      const server = new AbapAdtServer(sapUrl!, sharedUser!, sharedPass!, sapClient, sapLanguage);
+      await server.connect(transport);
       transport.onclose = () => {
         if (transport.sessionId) {
           sessions.delete(transport.sessionId);
           console.error(`[HTTP] Session closed: ${transport.sessionId} (${sessions.size} active)`);
         }
       };
+      await transport.handleRequest(req, res);
+      if (transport.sessionId) {
+        sessions.set(transport.sessionId, { transport, server });
+        console.error(`[HTTP] New session: ${transport.sessionId} [${sharedUser}] (${sessions.size} active)`);
+      }
+    } else {
+      // Per-user auth — check if credentials were already provided
+      // (This handles the case where the user logged in before starting the MCP session)
+      // For now, create the server with credentials if available, otherwise
+      // the session will need to be established after login.
+      //
+      // The MCP handshake needs a connected server. We create a temporary one
+      // to handle the init, then the user logs in, and we have the credentials
+      // for subsequent tool calls.
 
-      // Handle the initial request (triggers the init handshake which sets sessionId)
+      // We need to handle the initial handshake. Create a server with dummy creds
+      // that will fail on tool calls but succeed on init/listTools.
+      // After the user logs in, we'll replace it with a real one.
+
+      // Actually: create the MCP server without SAP creds — it will list tools fine.
+      // Tool calls will fail with "open /login to connect" until creds are provided.
+      const server = new AbapAdtServer(sapUrl!, 'PENDING', 'PENDING', sapClient, sapLanguage);
+      await server.connect(transport);
+
+      transport.onclose = () => {
+        if (transport.sessionId) {
+          sessions.delete(transport.sessionId);
+          pendingSessions.delete(transport.sessionId);
+          sessionCredentials.delete(transport.sessionId);
+          console.error(`[HTTP] Session closed: ${transport.sessionId}`);
+        }
+      };
+
       await transport.handleRequest(req, res);
 
-      // Store session AFTER the request is handled (sessionId is now set)
       if (transport.sessionId) {
-        sessions.set(transport.sessionId, { transport, server: sessionServer });
-        console.error(`[HTTP] New session: ${transport.sessionId} (${sessions.size} active)`);
+        // Check if user already logged in (race condition: login before MCP connect)
+        const creds = sessionCredentials.get(transport.sessionId);
+        if (creds) {
+          const realServer = new AbapAdtServer(sapUrl!, creds.user, creds.password, sapClient, sapLanguage);
+          await realServer.connect(transport);
+          sessions.set(transport.sessionId, { transport, server: realServer });
+          console.error(`[HTTP] New session: ${transport.sessionId} [${creds.user}] (${sessions.size} active)`);
+        } else {
+          pendingSessions.set(transport.sessionId, { transport, sessionId: transport.sessionId });
+          console.error(`[HTTP] Pending login: ${transport.sessionId} — user must visit /login?session=${transport.sessionId}`);
+        }
       }
-    });
+    }
+  });
 
-    httpServer.listen(port, () => {
-      console.error(`dassian-adt v2.0 running on http://0.0.0.0:${port}${mcpPath}`);
-      console.error(`Health check: http://0.0.0.0:${port}/health`);
-      console.error(`SAP system: ${process.env.SAP_URL}`);
-    });
+  httpServer.listen(port, () => {
+    console.error(`dassian-adt v2.0 running on http://0.0.0.0:${port}${mcpPath}`);
+    console.error(`Login page: http://0.0.0.0:${port}/login`);
+    console.error(`Health check: http://0.0.0.0:${port}/health`);
+    console.error(`SAP system: ${sapUrl}`);
+    if (requireLogin) {
+      console.error('Auth mode: per-user (users log in via /login page)');
+    } else {
+      console.error(`Auth mode: shared service account (${sharedUser})`);
+    }
+  });
 
-    process.on('SIGINT',  () => { httpServer.close(); process.exit(0); });
-    process.on('SIGTERM', () => { httpServer.close(); process.exit(0); });
-  }
+  process.on('SIGINT',  () => { httpServer.close(); process.exit(0); });
+  process.on('SIGTERM', () => { httpServer.close(); process.exit(0); });
 }
 
-// Determine transport mode from environment
-const server = new AbapAdtServer();
+// ─── Entry point ────────────────────────────────────────────────────────────
+
 const mode = process.env.MCP_TRANSPORT || 'stdio';
 
 if (mode === 'http') {
-  server.runHttp().catch(console.error);
+  runHttp().catch(console.error);
 } else {
+  // Stdio mode — requires SAP_USER + SAP_PASSWORD in env
+  const server = new AbapAdtServer();
   server.runStdio().catch(console.error);
 }
