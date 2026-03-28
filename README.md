@@ -2,7 +2,7 @@
 
 MCP server for SAP ABAP development via the ADT API. Connect AI assistants to your SAP system — read, write, test, and deploy ABAP code without SAP GUI.
 
-Built for real-world use. Handles bad input gracefully, gives actionable error messages, and prompts for missing information instead of crashing.
+The AI can create objects, write source, activate, manage transports, run code, query tables, and check quality. Full development lifecycle, not just read-only or code generation.
 
 ## Origins
 
