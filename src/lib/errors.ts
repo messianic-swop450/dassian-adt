@@ -45,13 +45,25 @@ export function parseAdtError(error: any): AdtErrorInfo {
   const msg = rawMessage.toLowerCase();
   const status: number | undefined = error?.response?.status;
 
+  // A 400 on basic read operations (get_source, abap_table, abap_search) often means
+  // the session cookie has expired — SAP returns 400 instead of 401 in this case.
+  // We detect this by checking for 400 with no meaningful error message (empty or generic).
+  // Legitimate 400s (bad search pattern, missing param) have descriptive messages.
+  const isAmbiguous400 =
+    status === 400 &&
+    (rawMessage === 'Unknown error' ||
+      rawMessage === 'Request failed with status code 400' ||
+      rawMessage.trim() === '' ||
+      rawMessage === 'Bad Request');
+
   return {
     message: rawMessage,
     isSessionTimeout:
       msg.includes('session timed out') ||
       msg.includes('session not found') ||
       msg.includes('not logged on') ||
-      status === 401,
+      status === 401 ||
+      isAmbiguous400,
     isUpgradeMode:
       msg.includes('adjustment mode') ||
       msg.includes('in adjustment') ||
