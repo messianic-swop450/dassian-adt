@@ -1,7 +1,6 @@
 .env
 dist
 node_modules
-package-lock.json
 coverage
 *.code-workspace
 TEST_RESULTS*.md
