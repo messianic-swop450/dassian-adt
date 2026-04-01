@@ -172,12 +172,30 @@ export class SourceHandlers extends BaseHandler {
     // Find METHOD boundaries (case-insensitive)
     const methodEscaped = method.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/~/g, '[~]');
     const startRe = new RegExp(`^([ \\t]*)METHOD\\s+${methodEscaped}\\s*\\.`, 'im');
-    const startMatch = startRe.exec(source!);
+    let startMatch = startRe.exec(source!);
     if (!startMatch) {
-      this.fail(`abap_edit_method: METHOD ${method} not found in ${name}. Check method name and class (case-insensitive search).`);
+      // Extract available method names from source to help the model pick the right one
+      const methodNames: string[] = [];
+      const listRe = /^\s*METHOD\s+(\S+)\s*\./gim;
+      let m: RegExpExecArray | null;
+      while ((m = listRe.exec(source!)) !== null) {
+        methodNames.push(m[1]);
+      }
+      const input = await this.elicitForm(
+        `abap_edit_method: METHOD "${method}" not found in ${name}. ` +
+        `Available methods: ${methodNames.slice(0, 30).join(', ')}${methodNames.length > 30 ? ` (+${methodNames.length - 30} more)` : ''}. ` +
+        `Please provide the correct method name (case-insensitive).`,
+        { method: { type: 'string', title: 'Method name', description: 'Correct method name from the list above' } },
+        ['method']
+      );
+      if (!input?.method) {
+        this.fail(`abap_edit_method: METHOD "${method}" not found in ${name}. Available: ${methodNames.join(', ')}`);
+      }
+      args.method = input!.method;
+      return this.handleEditMethod(args);
     }
 
-    const methodStart = startMatch!.index;
+    const methodStart = startMatch.index;
     // Find matching ENDMETHOD. after the METHOD line
     const afterStart = source!.indexOf('\n', methodStart);
     const endRe = /^\s*ENDMETHOD\s*\./im;
@@ -193,10 +211,32 @@ export class SourceHandlers extends BaseHandler {
     // Find/replace within method body
     const occurrences = methodBody.split(old_string).length - 1;
     if (occurrences === 0) {
-      this.fail(`abap_edit_method: old_string not found within METHOD ${method}. The string must exist exactly as given (case-sensitive).`);
+      // Show the method body so the model can see what's actually there
+      const bodyLines = methodBody.split('\n');
+      const preview = bodyLines.slice(0, 40).join('\n') + (bodyLines.length > 40 ? `\n... (${bodyLines.length - 40} more lines)` : '');
+      const input = await this.elicitForm(
+        `abap_edit_method: old_string not found in METHOD ${method}. ` +
+        `The search is case-sensitive. Method body (first 40 lines):\n\n${preview}\n\nProvide the corrected old_string to search for.`,
+        { old_string: { type: 'string', title: 'old_string', description: 'Exact string to find in the method body (case-sensitive)' } },
+        ['old_string']
+      );
+      if (!input?.old_string) {
+        this.fail(`abap_edit_method: old_string "${old_string}" not found within METHOD ${method}.`);
+      }
+      args.old_string = input!.old_string;
+      return this.handleEditMethod(args);
     }
     if (occurrences > 1 && !replace_all) {
-      this.fail(`abap_edit_method: old_string appears ${occurrences} times in METHOD ${method}. Set replace_all=true to replace all, or make old_string more specific.`);
+      const input = await this.elicitForm(
+        `abap_edit_method: old_string appears ${occurrences} times in METHOD ${method}. Replace all occurrences?`,
+        { replace_all: { type: 'boolean', title: 'Replace all', description: `Replace all ${occurrences} occurrences`, default: false } },
+        ['replace_all']
+      );
+      if (input?.replace_all) {
+        args.replace_all = true;
+      } else {
+        this.fail(`abap_edit_method: old_string appears ${occurrences} times in METHOD ${method}. Make old_string more specific or set replace_all=true.`);
+      }
     }
 
     const newBody = replace_all
