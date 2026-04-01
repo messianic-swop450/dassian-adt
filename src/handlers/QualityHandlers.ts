@@ -29,15 +29,31 @@ export class QualityHandlers extends BaseHandler {
         description:
           'Run ABAP Test Cockpit (ATC) checks on an object. ' +
           'Returns findings grouped by severity (error, warning, info). ' +
-          'Clean core compliance issues appear here.',
+          'Clean core compliance issues appear here. ' +
+          'The response includes worklistId and variantWarning — if variantWarning is set, SAP silently fell back to DEFAULT (variant name did not match SATC configuration). ' +
+          'Use abap_atc_variants to see what the system reports as its configured properties.',
         inputSchema: {
           type: 'object',
           properties: {
             name: { type: 'string', description: 'Object name' },
             type: { type: 'string', description: 'Object type' },
-            variant: { type: 'string', description: 'ATC check variant to use (default: DEFAULT)' }
+            variant: { type: 'string', description: 'ATC check variant name — must match exactly what is configured in SATC transaction (case-sensitive). Default: DEFAULT' }
           },
           required: ['name', 'type']
+        }
+      },
+      {
+        name: 'abap_atc_variants',
+        description:
+          'Return ATC system customizing (configured properties and exemption kinds). ' +
+          'Use this to diagnose ATC variant issues. Note: SAP does not expose a standard endpoint to list all variant names — ' +
+          'variant names must be checked in SATC transaction on the SAP system. ' +
+          'This tool also probes whether "DEFAULT" and a given variant resolve to the same worklist ID (silent fallback detection).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            probe_variant: { type: 'string', description: 'Optional: a variant name to probe. Returns worklistId for both DEFAULT and this variant so you can detect silent fallback (same ID = SAP fell back to DEFAULT).' }
+          }
         }
       },
       {
@@ -64,9 +80,10 @@ export class QualityHandlers extends BaseHandler {
 
   async handle(toolName: string, args: any): Promise<any> {
     switch (toolName) {
-      case 'abap_syntax_check': return this.handleSyntaxCheck(args);
-      case 'abap_atc_run':      return this.handleAtcRun(args);
-      case 'abap_where_used':   return this.handleWhereUsed(args);
+      case 'abap_syntax_check':  return this.handleSyntaxCheck(args);
+      case 'abap_atc_run':       return this.handleAtcRun(args);
+      case 'abap_atc_variants':  return this.handleAtcVariants(args);
+      case 'abap_where_used':    return this.handleWhereUsed(args);
       default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${toolName}`);
     }
   }
@@ -158,10 +175,29 @@ export class QualityHandlers extends BaseHandler {
     const variant = args.variant || 'DEFAULT';
     try {
       // Step 1: Resolve variant name to internal worklist ID.
-      // Passing the variant name string directly to createAtcRun causes a silent fallback to DEFAULT.
+      // SAP silently falls back to DEFAULT if the variant name doesn't exist in SATC.
       const worklistId = await this.withSession(() =>
         this.adtclient.atcCheckVariant(variant)
       );
+
+      // Step 1b: Fallback detection — if a non-DEFAULT variant was requested,
+      // also probe DEFAULT and compare IDs. Same ID = SAP silently fell back.
+      let variantWarning: string | undefined;
+      if (variant !== 'DEFAULT') {
+        try {
+          const defaultWorklistId = await this.withSession(() =>
+            this.adtclient.atcCheckVariant('DEFAULT')
+          );
+          if (worklistId === defaultWorklistId) {
+            variantWarning =
+              `Variant "${variant}" resolved to the same worklist ID as DEFAULT (${worklistId}). ` +
+              `SAP silently fell back — the variant name may not exist in SATC. ` +
+              `Check SATC transaction to confirm the exact variant name (case-sensitive).`;
+          }
+        } catch (_) {
+          // Non-fatal — don't block the ATC run if fallback probe fails
+        }
+      }
 
       // Step 2: Trigger a fresh ATC run using the resolved ID.
       const runResult = await this.withSession(() =>
@@ -199,9 +235,63 @@ export class QualityHandlers extends BaseHandler {
         }
       }
 
-      return this.success({ name: args.name, variant, runId: runResult.id, findings: grouped, totalFindings });
+      return this.success({
+        name: args.name,
+        variant,
+        worklistId,
+        runId: runResult.id,
+        findings: grouped,
+        totalFindings,
+        ...(variantWarning ? { variantWarning } : {})
+      });
     } catch (error: any) {
       this.fail(formatError(`abap_atc_run(${args.name})`, error));
+    }
+  }
+
+  private async handleAtcVariants(args: any): Promise<any> {
+    try {
+      // Get system-level ATC customizing (properties + exemption kinds)
+      const customizing = await this.withSession(() =>
+        this.adtclient.atcCustomizing()
+      );
+
+      // Probe DEFAULT worklist ID
+      const defaultWorklistId = await this.withSession(() =>
+        this.adtclient.atcCheckVariant('DEFAULT')
+      ).catch(() => null);
+
+      // Optionally probe a specific variant for fallback detection
+      let probeResult: Record<string, any> | undefined;
+      if (args.probe_variant && args.probe_variant !== 'DEFAULT') {
+        try {
+          const probeWorklistId = await this.withSession(() =>
+            this.adtclient.atcCheckVariant(args.probe_variant)
+          );
+          const fellBack = probeWorklistId === defaultWorklistId;
+          probeResult = {
+            variant: args.probe_variant,
+            worklistId: probeWorklistId,
+            defaultWorklistId,
+            fellBackToDefault: fellBack,
+            diagnosis: fellBack
+              ? `"${args.probe_variant}" does NOT exist in SATC — SAP returned the same worklistId as DEFAULT. Check SATC for the exact variant name (case-sensitive).`
+              : `"${args.probe_variant}" is a valid variant — it returned a different worklistId than DEFAULT.`
+          };
+        } catch (e: any) {
+          probeResult = { variant: args.probe_variant, error: e.message };
+        }
+      }
+
+      return this.success({
+        note: 'Variant names are configured in SATC transaction and cannot be listed via API. Use probe_variant to test if a specific name exists.',
+        defaultWorklistId,
+        systemProperties: customizing.properties,
+        exemptionKinds: customizing.excemptions,
+        ...(probeResult ? { probeResult } : {})
+      });
+    } catch (error: any) {
+      this.fail(formatError('abap_atc_variants', error));
     }
   }
 }

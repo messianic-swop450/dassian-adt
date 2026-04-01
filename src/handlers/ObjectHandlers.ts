@@ -1,6 +1,7 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './BaseHandler.js';
 import type { ToolDefinition } from '../types/tools.js';
+import type { InactiveObject } from 'abap-adt-api';
 import { buildObjectUrl, buildPackageUrl, getSupportedTypes } from '../lib/urlBuilder.js';
 import { formatError, parseAdtError, formatActivationMessages } from '../lib/errors.js';
 
@@ -82,6 +83,24 @@ export class ObjectHandlers extends BaseHandler {
         }
       },
       {
+        name: 'abap_activate_batch',
+        description:
+          'Activate multiple ABAP objects in a single ADT request. ' +
+          'More efficient than calling abap_activate repeatedly for each object. ' +
+          'Returns activated:true if all objects activated cleanly, or activated:false with error messages if any failed. ' +
+          'Use this after writing source for several objects at once (e.g. after a set of transport_assign calls).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            objects: {
+              type: 'array',
+              description: 'List of objects to activate. Each item must be an object with "name" (e.g. /DSN/MY_CLASS) and "type" (e.g. CLAS, PROG/P, DDLS).'
+            }
+          },
+          required: ['objects']
+        }
+      },
+      {
         name: 'abap_object_info',
         description:
           'Get metadata for an ABAP object: package, transport layer, active/inactive status, ' +
@@ -101,11 +120,12 @@ export class ObjectHandlers extends BaseHandler {
 
   async handle(toolName: string, args: any): Promise<any> {
     switch (toolName) {
-      case 'abap_create':      return this.handleCreate(args);
-      case 'abap_delete':      return this.handleDelete(args);
-      case 'abap_activate':    return this.handleActivate(args);
-      case 'abap_search':      return this.handleSearch(args);
-      case 'abap_object_info': return this.handleObjectInfo(args);
+      case 'abap_create':          return this.handleCreate(args);
+      case 'abap_delete':          return this.handleDelete(args);
+      case 'abap_activate':        return this.handleActivate(args);
+      case 'abap_activate_batch':  return this.handleActivateBatch(args);
+      case 'abap_search':          return this.handleSearch(args);
+      case 'abap_object_info':     return this.handleObjectInfo(args);
       default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${toolName}`);
     }
   }
@@ -309,6 +329,65 @@ export class ObjectHandlers extends BaseHandler {
       });
     } catch (error: any) {
       this.fail(formatError(`abap_activate(${args.name})`, error));
+    }
+  }
+
+  // Map short types to their ADT adtcore:type subtype for activation
+  private static readonly ACTIVATE_TYPE_MAP: Record<string, string> = {
+    'CLAS': 'CLAS/OC', 'INTF': 'INTF/OI', 'PROG': 'PROG/P',
+    'FUGR': 'FUGR/F', 'DDLS': 'DDLS/DF', 'DDLX': 'DDLX/EX',
+    'TABL': 'TABL/DT', 'DTEL': 'DTEL/DE', 'DOMA': 'DOMA/DD',
+    'DCLS': 'DCLS/DL', 'SRVD': 'SRVD/SRV', 'SRVB': 'SRVB/SVB',
+    'ENHO': 'ENHO/XHH', 'DEVC': 'DEVC/K', 'MSAG': 'MSAG/N',
+    'VIEW': 'VIEW/DV', 'BDEF': 'BDEF',
+  };
+
+  private async handleActivateBatch(args: any): Promise<any> {
+    if (!args.objects || !Array.isArray(args.objects) || args.objects.length === 0) {
+      this.fail('abap_activate_batch: objects array is required and must not be empty.');
+    }
+    try {
+      const inactiveObjects: InactiveObject[] = args.objects.map((o: any) => {
+        if (!o.name || !o.type) {
+          throw new Error(`Each object must have name and type. Got: ${JSON.stringify(o)}`);
+        }
+        const typeKey = o.type.toUpperCase();
+        const adtType = ObjectHandlers.ACTIVATE_TYPE_MAP[typeKey] || typeKey;
+        const uri = buildObjectUrl(o.name, o.type);
+        return {
+          'adtcore:uri': uri,
+          'adtcore:type': adtType,
+          'adtcore:name': o.name.toUpperCase(),
+          'adtcore:parentUri': ''
+        };
+      });
+
+      const result = await this.withSession(() =>
+        this.adtclient.activate(inactiveObjects)
+      );
+
+      if (result && !result.success) {
+        const errorText = formatActivationMessages(result.messages || []);
+        return this.success({
+          activated: false,
+          objectCount: inactiveObjects.length,
+          errors: errorText
+        });
+      }
+
+      const inactive = result?.inactive || [];
+      const inactiveNames = inactive
+        .map((i: any) => i.object?.['adtcore:name'])
+        .filter(Boolean);
+
+      return this.success({
+        activated: true,
+        objectCount: inactiveObjects.length,
+        objects: args.objects.map((o: any) => o.name),
+        dependentsStillInactive: inactiveNames.length > 0 ? inactiveNames : []
+      });
+    } catch (error: any) {
+      this.fail(formatError('abap_activate_batch', error));
     }
   }
 
