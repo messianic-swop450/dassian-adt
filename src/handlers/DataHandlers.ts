@@ -16,7 +16,7 @@ export class DataHandlers extends BaseHandler {
         inputSchema: {
           type: 'object',
           properties: {
-            sql: { type: 'string', description: 'OpenSQL query, e.g. SELECT * FROM VBRP WHERE VBELN = \'0090001234\' UP TO 10 ROWS' },
+            sql: { type: 'string', description: 'The SQL query string (parameter name is "sql", not "query"). OpenSQL syntax, e.g. SELECT * FROM VBRP WHERE VBELN = \'0090001234\' UP TO 10 ROWS' },
             limit: { type: 'number', description: 'Max rows to return (default 100)' }
           },
           required: ['sql']
@@ -53,7 +53,7 @@ export class DataHandlers extends BaseHandler {
     try {
       // The library's runQuery() omits Content-Type, causing a 400 on all systems.
       // Also strip UP TO N ROWS from the SQL — the endpoint uses ?rowNumber instead.
-      let sql: string = args.sql || '';
+      let sql: string = args.sql || args.query || '';
       let rowNumber: number = args.limit || 100;
       const upToMatch = sql.match(/\bUP\s+TO\s+(\d+)\s+ROWS\b/i);
       if (upToMatch) {

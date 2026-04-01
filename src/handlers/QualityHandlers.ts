@@ -120,15 +120,35 @@ export class QualityHandlers extends BaseHandler {
     }
     try {
       const objectUrl = buildObjectUrl(args.name, args.type);
-      const references: UsageReference[] = await this.withSession(() =>
-        this.adtclient.usageReferences(objectUrl, args.line, args.column)
-      );
+
+      // Basis 759 (S/4HANA 2025) returns "usagereferences:" namespace prefix (all lowercase)
+      // but the library's XML parser looks for "usageReferences:" (camelCase), giving 0 results.
+      // Fix: inject a temporary Axios response interceptor to normalise the casing before parsing.
+      // Safe on all basis versions — camelCase is correct per the SAP XML schema.
+      const axiosInst = (this.adtclient as any).httpClient?.httpclient?.axios;
+      let interceptorId: number | undefined;
+      if (axiosInst?.interceptors?.response) {
+        interceptorId = axiosInst.interceptors.response.use((resp: any) => {
+          if (typeof resp.data === 'string' && resp.data.includes('usagereferences:')) {
+            resp.data = resp.data.replace(/usagereferences:/g, 'usageReferences:');
+          }
+          return resp;
+        });
+      }
+
+      let references: UsageReference[];
+      try {
+        references = await this.withSession(() =>
+          this.adtclient.usageReferences(objectUrl, args.line, args.column)
+        );
+      } finally {
+        if (axiosInst && interceptorId !== undefined) {
+          axiosInst.interceptors.response.eject(interceptorId);
+        }
+      }
 
       // Use all references — isResult flag is unreliable across SAP versions
-      const results = references;
-
-      // Build a clean summary for each reference
-      const summary = results.map(r => ({
+      const summary = references.map(r => ({
         name: r['adtcore:name'],
         type: r['adtcore:type'] || '',
         description: r['adtcore:description'] || '',
@@ -140,7 +160,7 @@ export class QualityHandlers extends BaseHandler {
 
       // Optionally fetch code snippets
       let snippets: any[] | undefined;
-      if (args.snippets && results.length > 0) {
+      if (args.snippets && references.length > 0) {
         const rawSnippets = await this.withSession(() =>
           this.adtclient.usageReferenceSnippets(references)
         );
