@@ -48,10 +48,10 @@ const TYPE_PATHS: Record<string, string> = {
   'BDEF':     '/sap/bc/adt/bo/behaviordefinitions',
 
   // OData service definitions and bindings
-  'SRVD':     '/sap/bc/adt/srvd',
-  'SRVD/SRV': '/sap/bc/adt/srvd',
-  'SRVB':     '/sap/bc/adt/srvb',
-  'SRVB/SVB': '/sap/bc/adt/srvb',
+  'SRVD':     '/sap/bc/adt/ddic/srvd/sources',
+  'SRVD/SRV': '/sap/bc/adt/ddic/srvd/sources',
+  'SRVB':     '/sap/bc/adt/businessservices/bindings',
+  'SRVB/SVB': '/sap/bc/adt/businessservices/bindings',
 
   // Enhancements
   // ENHO/XHH — confirmed from live ADT session. upgradeFlag=true means SPAU_ENH required.

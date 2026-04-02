@@ -52,7 +52,7 @@ export function parseAdtError(error: any): AdtErrorInfo {
   const isAmbiguous400 =
     status === 400 &&
     (rawMessage === 'Unknown error' ||
-      rawMessage === 'Request failed with status code 400' ||
+      rawMessage.includes('status code 400') ||  // covers "Error: Request failed with status code 400" prefix variants
       rawMessage.trim() === '' ||
       rawMessage === 'Bad Request');
 
