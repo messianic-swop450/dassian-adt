@@ -69,9 +69,19 @@ export function parseAdtError(error: any): AdtErrorInfo {
       msg.includes('in adjustment') ||
       msg.includes('upgradeflag'),
     isLocked:
-      msg.includes('already locked') ||
-      msg.includes('locked by user') ||
-      msg.includes('enqueue'),
+      // Only true when another user/session holds the lock — not when a lock
+      // fails due to object state (inconsistent, syntax errors, etc.)
+      (msg.includes('already locked') ||
+       msg.includes('locked by user') ||
+       msg.includes('locked by another') ||
+       // 'enqueue' alone is too broad — SAP uses it in activation-error messages too.
+       // Only treat as a lock when enqueue failure implies another holder.
+       (msg.includes('enqueue') && (msg.includes('user') || msg.includes('another') || msg.includes('hold')))
+      ) &&
+      !msg.includes('inconsistent') &&
+      !msg.includes('syntax error') &&
+      !msg.includes('not active') &&
+      !msg.includes('inactive'),
     isNotFound:
       status === 404 ||
       msg.includes('does not exist') ||
@@ -97,6 +107,17 @@ export function formatError(operation: string, error: any): string {
     return (
       `${operation} failed: object is locked by another user or session. ` +
       `Check SM12 to see who holds the lock, or wait for it to release.`
+    );
+  }
+
+  // Lock attempt failed for a non-user-lock reason (inconsistency, syntax errors, etc.)
+  // Surface the actual SAP message so the agent doesn't go hunting for a phantom lock.
+  const msg = info.message.toLowerCase();
+  if (msg.includes('enqueue') || msg.includes('cannot be locked') || msg.includes('lock failed')) {
+    return (
+      `${operation} failed: lock was rejected — NOT a user/session lock. ` +
+      `SAP reason: ${info.message}. ` +
+      `Check if the object has syntax errors or is in an inconsistent state (run abap_syntax_check).`
     );
   }
 
