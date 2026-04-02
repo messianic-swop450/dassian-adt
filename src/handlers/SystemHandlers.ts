@@ -112,20 +112,49 @@ export class SystemHandlers extends BaseHandler {
 
   private async handleGetDump(args: any): Promise<any> {
     try {
-      const feed = await this.withSession(() =>
-        this.adtclient.dumps(args.query)
+      // Call the dumps endpoint directly — the library's parseDumps() destructures
+      // summary.#text unconditionally and throws on dumps with empty/missing summaries.
+      const h = (this.adtclient as any).h;
+      const qs: Record<string, string> = {};
+      if (args.query) qs['$query'] = args.query;
+      const response = await this.withSession(() =>
+        h.request('/sap/bc/adt/runtime/dumps', {
+          method: 'GET', qs,
+          headers: { Accept: 'application/atom+xml;type=feed' }
+        })
       );
-      const dumps = (feed as any).dumps || [];
-      return this.success({
-        count: dumps.length,
-        dumps: dumps.map((d: any) => ({
-          id: d.id,
-          text: d.text,
-          type: d.type,
-          author: d.author,
-          categories: (d.categories || []).map((c: any) => c.label || c.term)
-        }))
+
+      // Parse defensively — fast-xml-parser is already a dep of abap-adt-api
+      const { XMLParser } = await import('fast-xml-parser');
+      const parser = new XMLParser({
+        ignoreAttributes: false,
+        attributeNamePrefix: '@_',
+        removeNSPrefix: true,
+        isArray: (name) => name === 'entry' || name === 'category' || name === 'link'
       });
+      const raw = parser.parse((response as any).body || '');
+      const entries: any[] = raw?.feed?.entry || [];
+
+      const dumps = entries.map((e: any) => {
+        const id = e.id || '';
+        const author = e.author?.name || '';
+        // summary may be a string, an object with #text, or missing
+        const sumNode = e.summary;
+        const text = typeof sumNode === 'string'
+          ? sumNode
+          : (sumNode?.['#text'] || sumNode?.['#cdata-section'] || '');
+        const type = sumNode?.['@_type'] || '';
+        const categories = (e.category || []).map((c: any) =>
+          c['@_label'] || c['@_term'] || ''
+        );
+        const links = (e.link || []).map((l: any) => ({
+          href: l['@_href'] || l['@_rel'] || '',
+          rel: l['@_rel'] || ''
+        }));
+        return { id, author, text, type, categories, links };
+      });
+
+      return this.success({ count: dumps.length, dumps });
     } catch (error: any) {
       this.fail(`abap_get_dump failed: ${error.message || 'Unknown error'}`);
     }

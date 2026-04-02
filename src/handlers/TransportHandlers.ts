@@ -152,14 +152,6 @@ export class TransportHandlers extends BaseHandler {
     if (!args.name || !args.type || !args.transport) {
       this.fail('transport_assign requires name (object name), type (e.g. CLAS, VIEW), and transport (request number).');
     }
-    // Confirm before modifying transport contents
-    const confirmed = await this.confirmWithUser(
-      `Assign ${args.type} ${args.name} to transport ${args.transport}?`,
-      { object: args.name, type: args.type, transport: args.transport }
-    );
-    if (!confirmed) {
-      this.fail(`transport_assign(${args.name}): cancelled by user.`);
-    }
     // Metadata-only types (no text source) — assign via transportReference which registers
     // the object on the transport directly without needing lock+read/write+unlock.
     // These types are containers or have no direct text source — assign via transportReference
