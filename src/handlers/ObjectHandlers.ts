@@ -15,7 +15,8 @@ export class ObjectHandlers extends BaseHandler {
         description:
           'Create a new ABAP object. For temporary objects use package=$TMP — no transport needed. ' +
           'For permanent objects, provide both a named package and transport. ' +
-          'After creation, write source with abap_set_source and activate with abap_activate.',
+          'After creation, write source with abap_set_source and activate with abap_activate. ' +
+          'BDEF (behavior definition) is supported — activation order is DDLS → BDEF → behavior pool class.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -173,6 +174,45 @@ export class ObjectHandlers extends BaseHandler {
     const typeKey = args.type?.toUpperCase();
     const createType = ObjectHandlers.CREATE_TYPE_MAP[typeKey] || args.type;
     const packageUrl = buildPackageUrl(args.package);
+
+    // BDEF requires a custom Content-Type (application/vnd.sap.adt.blues.v1+xml) that the
+    // library's createObject does not support. Bypass it and call the ADT endpoint directly.
+    if (typeKey === 'BDEF') {
+      try {
+        const h = (this.adtclient as any).h;
+        const username = ((h.username || 'UNKNOWN') as string).toUpperCase();
+        const escDesc = (args.description || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const body =
+          `<?xml version="1.0" encoding="UTF-8"?>\n` +
+          `<blues:behaviorDefinition\n` +
+          `  xmlns:blues="http://www.sap.com/adt/bo/blues"\n` +
+          `  xmlns:adtcore="http://www.sap.com/adt/core"\n` +
+          `  adtcore:description="${escDesc}"\n` +
+          `  adtcore:name="${args.name.toUpperCase()}"\n` +
+          `  adtcore:responsible="${username}">\n` +
+          `  <adtcore:packageRef adtcore:name="${args.package}"/>\n` +
+          `</blues:behaviorDefinition>`;
+        const qs: any = {};
+        if (args.transport) qs.corrNr = args.transport;
+        await this.withSession(() =>
+          h.request('/sap/bc/adt/bo/behaviordefinitions', {
+            method: 'POST',
+            body,
+            headers: { 'Content-Type': 'application/vnd.sap.adt.blues.v1+xml' },
+            qs
+          })
+        );
+        return this.success({
+          message: `Created BDEF ${args.name}. Activation order: DDLS first → BDEF → behavior pool class. Use abap_set_source then abap_activate.`,
+          name: args.name,
+          type: 'BDEF',
+          package: args.package
+        });
+      } catch (error: any) {
+        this.fail(formatError(`abap_create(${args.name})`, error));
+      }
+    }
+
     try {
       await this.withSession(() =>
         this.adtclient.createObject(
