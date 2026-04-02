@@ -204,14 +204,19 @@ ENDCLASS.`;
       } catch (runError: any) {
         const msg = runError?.message || '';
         const status = runError?.response?.status;
+        // Extract SAP error body if present — distinguishes "service inactive" (403/404) from runtime errors
+        const body = runError?.response?.data || runError?.response?.body || '';
+        const bodyStr = typeof body === 'string' ? body.slice(0, 400) : JSON.stringify(body).slice(0, 400);
         if (status === 500 || msg.includes('500')) {
+          const detail = bodyStr ? ` SAP response: ${bodyStr}` : '';
           throw new Error(
             `classrun endpoint returned 500. Possible causes: ` +
             `(1) IF_OO_ADT_CLASSRUN is not available on this system release, ` +
-            `(2) the ABAP code has a runtime error — check abap_get_dump for a ST22 entry.`
+            `(2) the ABAP code has a runtime error — check abap_get_dump for a ST22 entry.${detail}`
           );
         }
-        throw new Error(`classrun failed: ${msg}`);
+        const detail = bodyStr ? ` SAP response: ${bodyStr}` : '';
+        throw new Error(`classrun failed: ${msg}${detail}`);
       }
 
       // SAP sometimes returns HTTP 200 with an error string in the body (e.g. "Error: Class does not implement ~main").
