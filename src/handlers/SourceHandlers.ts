@@ -14,6 +14,7 @@ export class SourceHandlers extends BaseHandler {
         annotations: { readOnlyHint: true },
         description:
           'Get the ABAP source code for any object by name and type. ' +
+          'NOT for TABL or STRU — those are DDIC objects with no source; use abap_table instead. ' +
           'No URL construction needed — just provide the object name and type. ' +
           `Supported types: ${SUPPORTED}. ` +
           'For namespaced objects pass the raw name including slashes, e.g. /DSN/MY_CLASS. ' +
@@ -129,6 +130,16 @@ export class SourceHandlers extends BaseHandler {
   }
 
   private async handleGetSource(args: any): Promise<any> {
+    // Tables and structures are DDIC objects — they don't have ABAP source code.
+    // Redirect immediately so the agent doesn't hit SAP with a confusing error.
+    const typeKey = args.type?.toUpperCase();
+    if (['TABL', 'TABL/DT', 'TABL/DS', 'STRU'].includes(typeKey)) {
+      this.fail(
+        `abap_get_source does not work for ${args.type} objects — DDIC tables and structures ` +
+        `have no ABAP source. Use abap_table(name="${args.name}") to get field definitions instead.`
+      );
+    }
+
     try {
       let sourceUrl: string;
 
