@@ -18,7 +18,10 @@ export class TransportHandlers extends BaseHandler {
           type: 'object',
           properties: {
             description: { type: 'string', description: 'Short description for the transport (shown in STMS)' },
-            package: { type: 'string', description: 'Target package, e.g. /DSN/CORE' },
+            package: {
+              type: 'string',
+              description: 'Target package, e.g. /DSN/CORE. If omitted, SAP derives it from the anchor object.'
+            },
             objectName: {
               type: 'string',
               description: 'Name of one object to anchor the transport to (required by ADT API)'
@@ -28,7 +31,7 @@ export class TransportHandlers extends BaseHandler {
               description: 'Type of the anchor object (e.g. CLAS, DDLS/DF)'
             }
           },
-          required: ['description', 'package', 'objectName', 'objectType']
+          required: ['description', 'objectName', 'objectType']
         }
       },
       {
@@ -121,9 +124,12 @@ export class TransportHandlers extends BaseHandler {
 
   private async handleCreate(args: any): Promise<any> {
     const sourceUrl = buildSourceUrl(args.objectName, args.objectType);
+    // package is optional — when omitted SAP derives it from the anchor object's REF URL.
+    // Passing a wrong package causes "Error during deserialization" from SAP.
+    const devclass = args.package || '';
     try {
       const result = await this.withSession(() =>
-        this.adtclient.createTransport(sourceUrl, args.description, args.package)
+        this.adtclient.createTransport(sourceUrl, args.description, devclass)
       );
       const transportNumber = (result as any)?.transportNumber || result;
       return this.success({
@@ -131,6 +137,13 @@ export class TransportHandlers extends BaseHandler {
         message: `Transport created. Use transport_assign to add objects, then transport_release when ready.`
       });
     } catch (error: any) {
+      const msg = String(error?.message || error || '');
+      if (/deserialization/i.test(msg)) {
+        this.fail(
+          `transport_create failed: SAP rejected the request — most likely the package name is wrong or the anchor object does not exist. ` +
+          `Try omitting the package parameter and let SAP derive it from the object. Original: ${msg}`
+        );
+      }
       this.fail(formatError('transport_create', error));
     }
   }
