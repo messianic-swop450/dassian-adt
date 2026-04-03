@@ -297,19 +297,24 @@ export class SourceHandlers extends BaseHandler {
       this.fail(`abap_edit_method: Syntax errors in reconstructed source — change NOT written.\n${msgs}`);
     }
 
-    // Write back
+    // Write back — lock → write → unlock in one withSession so session recovery
+    // re-acquires the lock atomically with the new session cookie.
     await this.notify(`Writing updated METHOD ${method} to ${name}…`);
     let lockHandle: string | null = null;
     try {
-      const lockResult = await this.withSession(() => this.adtclient.lock(objectUrl));
-      lockHandle = lockResult.LOCK_HANDLE;
-
-      await this.withSession(() =>
-        this.adtclient.setObjectSource(sourceUrl, newSource, lockHandle!, transport)
-      );
-
-      await this.withSession(() => this.adtclient.unLock(objectUrl, lockHandle!));
-      lockHandle = null;
+      await this.withSession(async () => {
+        const r = await this.adtclient.lock(objectUrl);
+        lockHandle = r.LOCK_HANDLE;
+        try {
+          await this.adtclient.setObjectSource(sourceUrl, newSource, lockHandle!, transport);
+        } catch (err) {
+          try { await this.adtclient.unLock(objectUrl, lockHandle!); } catch (_) {}
+          lockHandle = null;
+          throw err;
+        }
+        await this.adtclient.unLock(objectUrl, lockHandle!);
+        lockHandle = null;
+      });
 
       return this.success({
         message: `METHOD ${method} updated (${occurrences} replacement${occurrences > 1 ? 's' : ''}). Call abap_activate(${name}, CLAS) to activate.`,
@@ -353,46 +358,48 @@ export class SourceHandlers extends BaseHandler {
       objectUrl = buildObjectUrl(args.name, args.type);
       sourceUrl = `${objectUrl}/source/main`;
     }
+
     let lockHandle: string | null = null;
 
-    const tryLock = async (): Promise<string> => {
+    // Lock → write → unlock as a SINGLE withSession block.
+    // This is critical: if a session timeout fires mid-sequence and withSession re-logins,
+    // the entire block retries — so the new lock handle is acquired in the new session,
+    // preventing "lock handle from dead session used in new session" rejections.
+    const doWrite = async (): Promise<void> => {
+      const r = await this.adtclient.lock(objectUrl!);
+      lockHandle = r.LOCK_HANDLE;
       try {
-        const r = await this.withSession(() => this.adtclient.lock(objectUrl!));
-        return r.LOCK_HANDLE;
-      } catch (e: any) {
-        const m = String(e?.message || '');
-        // ADT CDS locks don't always appear in SM12 — they use a separate mechanism.
-        // Stale locks from previous sessions/creates clear on their own within seconds.
-        // Retry up to 2 times with increasing delays before giving up.
-        if (/locked by another/i.test(m)) {
-          for (const delay of [3000, 8000]) {
-            await new Promise(res => setTimeout(res, delay));
-            try {
-              const r2 = await this.withSession(() => this.adtclient.lock(objectUrl!));
-              return r2.LOCK_HANDLE;
-            } catch (_) {}
-          }
-          throw new Error(
-            `Cannot lock ${args.name} — a stale ADT session lock is blocking it. ` +
-            `Note: ADT CDS source locks do NOT appear in SM12. ` +
-            `Wait 30-60 seconds and retry, or have the conflicting Eclipse/ADT session close the editor.`
-          );
-        }
-        throw e;
+        await this.adtclient.setObjectSource(sourceUrl!, args.source, lockHandle!, args.transport);
+      } catch (writeErr: any) {
+        try { await this.adtclient.unLock(objectUrl!, lockHandle!); } catch (_) {}
+        lockHandle = null;
+        throw writeErr;
       }
+      await this.adtclient.unLock(objectUrl!, lockHandle!);
+      lockHandle = null;
     };
 
     try {
-      lockHandle = await tryLock();
-
-      await this.withSession(() =>
-        this.adtclient.setObjectSource(sourceUrl, args.source, lockHandle!, args.transport)
-      );
-
-      await this.withSession(() =>
-        this.adtclient.unLock(objectUrl, lockHandle!)
-      );
-      lockHandle = null;
+      // Retry up to twice if locked by another session (stale locks clear within seconds).
+      // Use abap_unlock to force-release if retries all fail.
+      let lastError: any;
+      for (const delay of [0, 3000, 8000]) {
+        if (delay > 0) await new Promise(r => setTimeout(r, delay));
+        try {
+          await this.withSession(doWrite);
+          lastError = null;
+          break;
+        } catch (e: any) {
+          lastError = e;
+          if (!/locked by another/i.test(String(e?.message || ''))) break;
+        }
+      }
+      if (lastError) {
+        if (lockHandle) {
+          try { await this.adtclient.unLock(objectUrl!, lockHandle); } catch (_) {}
+        }
+        throw lastError;
+      }
 
       return this.success({
         message: `Source written. Call abap_activate(${args.name}, ${args.type}) to activate.`,
@@ -400,9 +407,6 @@ export class SourceHandlers extends BaseHandler {
         type: args.type
       });
     } catch (error: any) {
-      if (lockHandle) {
-        try { await this.adtclient.unLock(objectUrl, lockHandle); } catch (_) {}
-      }
       // If the error is about a missing transport, elicit it from the user and retry
       const errMsg = (error?.message || '').toLowerCase();
       if (!args.transport && (errMsg.includes('transport') || errMsg.includes('correction') || errMsg.includes('request'))) {

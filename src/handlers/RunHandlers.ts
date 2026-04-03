@@ -8,6 +8,24 @@ export class RunHandlers extends BaseHandler {
   getTools(): ToolDefinition[] {
     return [
       {
+        name: 'abap_unlock',
+        description:
+          'Force-release a stale ADT/ENQUEUE lock on an ABAP object. Use this when abap_set_source ' +
+          'or abap_edit_method fails because a previous MCP operation locked the object but crashed ' +
+          'before unlocking it — leaving the object stuck. Calls the appropriate ABAP DEQUEUE function ' +
+          'to release the ENQUEUE lock server entry. Only releases locks held by the current SAP user ' +
+          '(safe — cannot affect other users\' legitimate locks). ' +
+          'Supported types: CLAS, INTF, PROG, FUGR. For other types, use SM12 in SAP GUI.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Object name, e.g. /DSN/BP_R_MOD or ZCL_MY_CLASS' },
+            type: { type: 'string', description: 'Object type: CLAS, INTF, PROG, or FUGR' }
+          },
+          required: ['name', 'type']
+        }
+      },
+      {
         name: 'abap_run',
         description:
           'Create a temporary ABAP class in $TMP, run it via IF_OO_ADT_CLASSRUN, capture output, then delete it. ' +
@@ -47,9 +65,43 @@ export class RunHandlers extends BaseHandler {
 
   async handle(toolName: string, args: any): Promise<any> {
     switch (toolName) {
-      case 'abap_run': return this.handleRun(args);
+      case 'abap_unlock': return this.handleUnlock(args);
+      case 'abap_run':    return this.handleRun(args);
       default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${toolName}`);
     }
+  }
+
+  private async handleUnlock(args: any): Promise<any> {
+    const name = (args.name || '').toUpperCase();
+    const baseType = (args.type || '').toUpperCase().split('/')[0];
+
+    // Map object type to the corresponding ABAP DEQUEUE function module and key parameter.
+    // _scope='1' = current user only (safe — cannot release other users' legitimate locks).
+    const DEQUEUE_MAP: Record<string, { fm: string; param: string }> = {
+      'CLAS': { fm: 'DEQUEUE_E_SEOCLSENQ', param: 'clsname' },
+      'INTF': { fm: 'DEQUEUE_E_SEOCLSENQ', param: 'clsname' },
+      'PROG': { fm: 'DEQUEUE_E_ENREPSRC',  param: 'progname' },
+      'FUGR': { fm: 'DEQUEUE_E_ENLOGOPG',  param: 'area' },
+    };
+
+    const deq = DEQUEUE_MAP[baseType];
+    if (!deq) {
+      this.fail(
+        `abap_unlock: unsupported type '${baseType}'. ` +
+        `Supported: CLAS, INTF, PROG, FUGR. For other types, use SM12 in SAP GUI.`
+      );
+    }
+
+    const methodBody =
+      `CALL FUNCTION '${deq!.fm}'\n` +
+      `  EXPORTING\n` +
+      `    ${deq!.param} = '${name}'\n` +
+      `    _scope        = '1'\n` +
+      `    _synchron     = 'X'.\n` +
+      `out->write( |abap_unlock: ${deq!.fm} called for '${name}' (scope=current user). ` +
+      `If lock persists, check SM12 — another user may hold it.| ).`;
+
+    return this.handleRun({ methodBody, className: 'ZCL_TMP_UNLOCK' });
   }
 
   private buildClassSource(className: string, methodBody: string, methodName: string): string {
