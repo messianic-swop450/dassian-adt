@@ -472,7 +472,9 @@ export class SourceHandlers extends BaseHandler {
     const { name, include_type, source, transport } = args;
     const encoded = name.replace(/\//g, '%2f').replace(/\$/g, '%24').toLowerCase();
     const objectUrl = `/sap/bc/adt/oo/classes/${encoded}`;
-    const sourceUrl = `${objectUrl}/includes/${include_type}`;
+    // Class includes follow the same /source/main suffix pattern as function group includes.
+    // PUT directly to /includes/{type} returns 400; /includes/{type}/source/main is the write endpoint.
+    const sourceUrl = `${objectUrl}/includes/${include_type}/source/main`;
 
     let lockHandle: string | null = null;
 
