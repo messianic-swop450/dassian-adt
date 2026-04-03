@@ -15,10 +15,13 @@ export interface AdtErrorInfo {
 
 export function parseAdtError(error: any): AdtErrorInfo {
   // Extract message from various error shapes
+  // The abap-adt-api library wraps responses as {body, status, headers} (not axios's {data}).
+  // Check both .data (axios shape) and .body (library shape) so SAP error bodies surface correctly.
   let rawMessage: string =
     error?.response?.data?.message ||
     error?.response?.data?.['message'] ||
     (typeof error?.response?.data === 'string' ? error.response.data : '') ||
+    (typeof error?.response?.body === 'string' ? error.response.body : '') ||
     error?.message ||
     'Unknown error';
 
