@@ -10,12 +10,13 @@ export class RunHandlers extends BaseHandler {
       {
         name: 'abap_unlock',
         description:
-          'Force-release a stale ADT/ENQUEUE lock on an ABAP object. Use this when abap_set_source ' +
-          'or abap_edit_method fails because a previous MCP operation locked the object but crashed ' +
-          'before unlocking it — leaving the object stuck. Calls the appropriate ABAP DEQUEUE function ' +
-          'to release the ENQUEUE lock server entry. Only releases locks held by the current SAP user ' +
-          '(safe — cannot affect other users\' legitimate locks). ' +
-          'Supported types: CLAS, INTF, PROG, FUGR. For other types, use SM12 in SAP GUI.',
+          'Release the ABAP enqueue lock (SM12) for an object. Use when abap_set_source or ' +
+          'abap_edit_method fails because a previous MCP operation crashed before unlocking. ' +
+          'Calls the appropriate DEQUEUE FM. Only affects locks held by the current SAP user. ' +
+          'LIMITATION: clears the enqueue lock (SM12) only — NOT the ICM HTTP session lock. ' +
+          'If the object is still blocked after this, a stale ICM session holds the ADT lock: ' +
+          'kill it in SM04 (delete work process entries for this user showing the ADT class path). ' +
+          'Supported types: CLAS, INTF, PROG, FUGR.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -125,7 +126,7 @@ export class RunHandlers extends BaseHandler {
     const methodBody =
       `TRY.\n` +
       `  ${template!(name).split('\n').join('\n  ')}\n` +
-      `  out->write( |abap_unlock: lock released for '${name}' (scope=all sessions, current user).| ).\n` +
+      `  out->write( |abap_unlock: DEQUEUE FM called for '${name}'. Enqueue lock (SM12) cleared. If object still blocked, a stale ICM session in SM04 holds the ADT lock.| ).\n` +
       `CATCH cx_root INTO DATA(lx).\n` +
       `  out->write( |abap_unlock failed: { lx->get_text( ) }| ).\n` +
       `ENDTRY.`;

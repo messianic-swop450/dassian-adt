@@ -49,7 +49,10 @@ export class SystemHandlers extends BaseHandler {
           '(2) SICF path management, ' +
           '(3) Any ADT endpoint not exposed as a dedicated tool. ' +
           'For SITO source writes: method=PUT, path=/sap/bc/adt/ddls/SITO_NAME/source/main?lockHandle=LOCK, ' +
-          'contentType=application/json, body=<JSON source>.',
+          'contentType=application/json, body=<JSON source>. ' +
+          'WARNING: raw_http CANNOT be used for stateful multi-step sequences (lock → write → unlock). ' +
+          'Each raw_http call may get a different ICM HTTP session, making lock handles invalid for subsequent calls. ' +
+          'Use abap_set_source, abap_set_class_include, or abap_edit_method for any operation requiring a lock.',
         inputSchema: {
           type: 'object',
           properties: {

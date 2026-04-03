@@ -429,7 +429,7 @@ export class SourceHandlers extends BaseHandler {
           break;
         } catch (e: any) {
           lastError = e;
-          if (!/locked by another/i.test(String(e?.message || ''))) break;
+          if (!/locked by another|currently editing/i.test(String(e?.message || ''))) break;
         }
       }
       if (lastError) {
@@ -500,7 +500,7 @@ export class SourceHandlers extends BaseHandler {
           break;
         } catch (e: any) {
           lastError = e;
-          if (!/locked by another/i.test(String(e?.message || ''))) break;
+          if (!/locked by another|currently editing/i.test(String(e?.message || ''))) break;
         }
       }
       if (lastError) throw lastError;
