@@ -77,11 +77,13 @@ export class RunHandlers extends BaseHandler {
 
     // Map object type to the corresponding ABAP DEQUEUE function module and key parameter.
     // _scope='1' = current user only (safe — cannot release other users' legitimate locks).
+    // SAP's DEQUEUE FM naming: DEQUEUE_E + lockobjectname (no underscore before lock name).
+    // e.g. lock object SEOCLSENQ → DEQUEUE_ESEOCLSENQ (NOT DEQUEUE_E_SEOCLSENQ).
     const DEQUEUE_MAP: Record<string, { fm: string; param: string }> = {
-      'CLAS': { fm: 'DEQUEUE_E_SEOCLSENQ', param: 'clsname' },
-      'INTF': { fm: 'DEQUEUE_E_SEOCLSENQ', param: 'clsname' },
-      'PROG': { fm: 'DEQUEUE_E_ENREPSRC',  param: 'progname' },
-      'FUGR': { fm: 'DEQUEUE_E_ENLOGOPG',  param: 'area' },
+      'CLAS': { fm: 'DEQUEUE_ESEOCLSENQ', param: 'clsname' },
+      'INTF': { fm: 'DEQUEUE_ESEOCLSENQ', param: 'clsname' },
+      'PROG': { fm: 'DEQUEUE_EENREPSRC',  param: 'progname' },
+      'FUGR': { fm: 'DEQUEUE_EENLOGOPG',  param: 'area' },
     };
 
     const deq = DEQUEUE_MAP[baseType];
@@ -92,14 +94,20 @@ export class RunHandlers extends BaseHandler {
       );
     }
 
+    // _scope = '2' releases all locks held by current user across all sessions,
+    // which covers stale locks left by previous MCP sessions that didn't clean up.
     const methodBody =
-      `CALL FUNCTION '${deq!.fm}'\n` +
-      `  EXPORTING\n` +
-      `    ${deq!.param} = '${name}'\n` +
-      `    _scope        = '1'\n` +
-      `    _synchron     = 'X'.\n` +
-      `out->write( |abap_unlock: ${deq!.fm} called for '${name}' (scope=current user). ` +
-      `If lock persists, check SM12 — another user may hold it.| ).`;
+      `TRY.\n` +
+      `  CALL FUNCTION '${deq!.fm}'\n` +
+      `    EXPORTING\n` +
+      `      ${deq!.param} = '${name}'\n` +
+      `      _scope        = '2'\n` +
+      `      _synchron     = 'X'.\n` +
+      `  out->write( |abap_unlock: ${deq!.fm} called for '${name}'. ` +
+      `If lock persists, another user may hold it — check SM12.| ).\n` +
+      `CATCH cx_root INTO DATA(lx).\n` +
+      `  out->write( |abap_unlock failed: { lx->get_text( ) }| ).\n` +
+      `ENDTRY.`;
 
     return this.handleRun({ methodBody, className: 'ZCL_TMP_UNLOCK' });
   }
