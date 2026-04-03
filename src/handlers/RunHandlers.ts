@@ -75,36 +75,57 @@ export class RunHandlers extends BaseHandler {
     const name = (args.name || '').toUpperCase();
     const baseType = (args.type || '').toUpperCase().split('/')[0];
 
-    // Map object type to the corresponding ABAP DEQUEUE function module and key parameter.
-    // _scope='1' = current user only (safe — cannot release other users' legitimate locks).
-    // SAP's DEQUEUE FM naming: DEQUEUE_E + lockobjectname (no underscore before lock name).
-    // e.g. lock object SEOCLSENQ → DEQUEUE_ESEOCLSENQ (NOT DEQUEUE_E_SEOCLSENQ).
-    const DEQUEUE_MAP: Record<string, { fm: string; param: string }> = {
-      'CLAS': { fm: 'DEQUEUE_ESEOCLSENQ', param: 'clsname' },
-      'INTF': { fm: 'DEQUEUE_ESEOCLSENQ', param: 'clsname' },
-      'PROG': { fm: 'DEQUEUE_EENREPSRC',  param: 'progname' },
-      'FUGR': { fm: 'DEQUEUE_EENLOGOPG',  param: 'area' },
+    // Per-type ABAP CALL FUNCTION templates.
+    // _scope='2' = all sessions of current user — covers stale locks from dead MCP sessions.
+    // CLAS/INTF: FM is DEQUEUE_ESEOCLASS (named after the transaction, not the lock object).
+    //   Lock object in SM12 shows as SEOCLSENQ, but the FM is DEQUEUE_ESEOCLASS with
+    //   MODE_SEOCLSENQ, CLSNAME, INCTYPE (include type, blank = wildcard), CPDNAME params.
+    // PROG/FUGR: FM names are best-guess — correct if they fail.
+    const DEQUEUE_ABAP: Record<string, (n: string) => string> = {
+      'CLAS': (n) =>
+        `CALL FUNCTION 'DEQUEUE_ESEOCLASS'\n` +
+        `  EXPORTING\n` +
+        `    mode_seoclsenq = 'E'\n` +
+        `    clsname        = '${n}'\n` +
+        `    inctype        = ' '\n` +
+        `    cpdname        = ' '\n` +
+        `    _scope         = '2'\n` +
+        `    _synchron      = 'X'.`,
+      'INTF': (n) =>
+        `CALL FUNCTION 'DEQUEUE_ESEOCLASS'\n` +
+        `  EXPORTING\n` +
+        `    mode_seoclsenq = 'E'\n` +
+        `    clsname        = '${n}'\n` +
+        `    inctype        = ' '\n` +
+        `    cpdname        = ' '\n` +
+        `    _scope         = '2'\n` +
+        `    _synchron      = 'X'.`,
+      'PROG': (n) =>
+        `CALL FUNCTION 'DEQUEUE_EENREPSRC'\n` +
+        `  EXPORTING\n` +
+        `    progname  = '${n}'\n` +
+        `    _scope    = '2'\n` +
+        `    _synchron = 'X'.`,
+      'FUGR': (n) =>
+        `CALL FUNCTION 'DEQUEUE_EENLOGOPG'\n` +
+        `  EXPORTING\n` +
+        `    area      = '${n}'\n` +
+        `    _scope    = '2'\n` +
+        `    _synchron = 'X'.`,
     };
 
-    const deq = DEQUEUE_MAP[baseType];
-    if (!deq) {
+    const template = DEQUEUE_ABAP[baseType];
+    if (!template) {
       this.fail(
         `abap_unlock: unsupported type '${baseType}'. ` +
         `Supported: CLAS, INTF, PROG, FUGR. For other types, use SM12 in SAP GUI.`
       );
     }
 
-    // _scope = '2' releases all locks held by current user across all sessions,
-    // which covers stale locks left by previous MCP sessions that didn't clean up.
     const methodBody =
       `TRY.\n` +
-      `  CALL FUNCTION '${deq!.fm}'\n` +
-      `    EXPORTING\n` +
-      `      ${deq!.param} = '${name}'\n` +
-      `      _scope        = '2'\n` +
-      `      _synchron     = 'X'.\n` +
-      `  out->write( |abap_unlock: ${deq!.fm} called for '${name}'. ` +
-      `If lock persists, another user may hold it — check SM12.| ).\n` +
+      `  ${template!(name).split('\n').join('\n  ')}\n` +
+      `  out->write( |abap_unlock: lock released for '${name}' (scope=all sessions, current user).| ).\n` +
       `CATCH cx_root INTO DATA(lx).\n` +
       `  out->write( |abap_unlock failed: { lx->get_text( ) }| ).\n` +
       `ENDTRY.`;
