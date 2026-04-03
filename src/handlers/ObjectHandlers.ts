@@ -464,32 +464,58 @@ export class ObjectHandlers extends BaseHandler {
       this.fail('abap_activate_batch: objects array is required and must not be empty.');
     }
     try {
-      const inactiveObjects: InactiveObject[] = args.objects.map((o: any) => {
+      // Build activation payload. SAP's batch endpoint uses the same minimal format as single:
+      // {uri, name} only — adding adtcore:type or adtcore:parentUri causes "Check of condition failed".
+      const objectRefs = args.objects.map((o: any) => {
         if (!o.name || !o.type) {
           throw new Error(`Each object must have name and type. Got: ${JSON.stringify(o)}`);
         }
-        const typeKey = o.type.toUpperCase();
-        const adtType = ObjectHandlers.ACTIVATE_TYPE_MAP[typeKey] || typeKey;
         const uri = buildObjectUrl(o.name, o.type);
-        return {
-          'adtcore:uri': uri,
-          'adtcore:type': adtType,
-          'adtcore:name': o.name.toUpperCase(),
-          'adtcore:parentUri': ''
-        };
+        return { uri, name: o.name.toUpperCase() };
       });
 
-      await this.notify(`Activating ${inactiveObjects.length} object(s)…`);
-      const result = await this.withSession(() =>
-        this.adtclient.activate(inactiveObjects)
+      await this.notify(`Activating ${objectRefs.length} object(s)…`);
+
+      // Post directly — the library's array form adds adtcore:type/parentUri which SAP rejects
+      const h = (this.adtclient as any).h;
+      const body =
+        `<?xml version="1.0" encoding="UTF-8"?>` +
+        `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">` +
+        objectRefs.map((r: any) => `<adtcore:objectReference adtcore:uri="${r.uri}" adtcore:name="${r.name}"/>`).join('\n') +
+        `</adtcore:objectReferences>`;
+
+      const rawResp = await this.withSession(() =>
+        h.request('/sap/bc/adt/activation', {
+          method: 'POST', body,
+          qs: { method: 'activate', preauditRequested: true }
+        })
       );
+
+      // Parse response the same way the library does
+      const { XMLParser } = await import('fast-xml-parser');
+      const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', removeNSPrefix: true });
+      const parsed = parser.parse((rawResp as any).body || '');
+      const msgs: any[] = [];
+      const chkl = parsed?.messages;
+      if (chkl) {
+        const arr = Array.isArray(chkl.msg) ? chkl.msg : (chkl.msg ? [chkl.msg] : []);
+        arr.forEach((m: any) => msgs.push({ type: m['@_type'] || 'E', shortText: m?.shortText?.txt || 'Syntax error', objName: m['@_objName'] || '' }));
+      }
+      const hasError = msgs.some((m: any) => /[EAX]/.test(m.type));
+      const inactives: any[] = [];
+      const ioc = parsed?.inactiveObjects;
+      if (ioc) {
+        const entries = Array.isArray(ioc.entry) ? ioc.entry : (ioc.entry ? [ioc.entry] : []);
+        entries.forEach((e: any) => inactives.push(e));
+      }
+      const result = { success: !hasError && inactives.length === 0, messages: msgs, inactive: inactives };
 
       if (result && !result.success) {
         const errorText = formatActivationMessages(result.messages || []);
 
         // Offer to retry each object individually to isolate which one(s) are failing
         const choice = await this.elicitChoice(
-          `Batch activation failed for ${inactiveObjects.length} object(s).\n${errorText}\n\n` +
+          `Batch activation failed for ${objectRefs.length} object(s).\n${errorText}\n\n` +
           `Retry each object individually to find which one(s) are causing the failure?`,
           'action',
           ['Retry individually', 'Abort'],
@@ -499,18 +525,18 @@ export class ObjectHandlers extends BaseHandler {
         if (choice === 'Retry individually') {
           const passed: string[] = [];
           const failed: Array<{ name: string; error: string }> = [];
-          for (const obj of inactiveObjects) {
+          for (const obj of objectRefs) {
             try {
               const r = await this.withSession(() =>
-                this.adtclient.activate(obj)
+                this.adtclient.activate(obj.name, obj.uri)
               );
               if (r && !r.success) {
-                failed.push({ name: obj['adtcore:name'], error: formatActivationMessages(r.messages || []) });
+                failed.push({ name: obj.name, error: formatActivationMessages(r.messages || []) });
               } else {
-                passed.push(obj['adtcore:name']);
+                passed.push(obj.name);
               }
             } catch (e: any) {
-              failed.push({ name: obj['adtcore:name'], error: e.message });
+              failed.push({ name: obj.name, error: (e as any).message });
             }
           }
           return this.success({
@@ -532,7 +558,7 @@ export class ObjectHandlers extends BaseHandler {
       // Offer to activate still-inactive dependents
       if (inactiveNames.length > 0) {
         const activateDeps = await this.confirmWithUser(
-          `${inactiveObjects.length} object(s) activated. ` +
+          `${objectRefs.length} object(s) activated. ` +
           `${inactiveNames.length} dependent(s) are still inactive: ${inactiveNames.join(', ')}. Activate them too?`,
           { dependents: inactiveNames.join(', ') }
         );
@@ -553,7 +579,7 @@ export class ObjectHandlers extends BaseHandler {
           }
           return this.success({
             activated: true,
-            objectCount: inactiveObjects.length,
+            objectCount: objectRefs.length,
             objects: args.objects.map((o: any) => o.name),
             dependentsActivated: activatedDeps,
             dependentsFailed: failedDeps.length > 0 ? failedDeps : undefined
@@ -563,7 +589,7 @@ export class ObjectHandlers extends BaseHandler {
 
       return this.success({
         activated: true,
-        objectCount: inactiveObjects.length,
+        objectCount: objectRefs.length,
         objects: args.objects.map((o: any) => o.name),
         dependentsStillInactive: inactiveNames.length > 0 ? inactiveNames : []
       });
