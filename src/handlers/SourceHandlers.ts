@@ -99,6 +99,43 @@ export class SourceHandlers extends BaseHandler {
         }
       },
       {
+        name: 'abap_set_class_include',
+        annotations: { idempotentHint: true },
+        description:
+          'Write source to a specific include of an ABAP class (implementations, definitions, macros, testclasses). ' +
+          'Use this instead of raw_http lock/PUT/unlock sequences — those break because each raw_http call ' +
+          'gets a fresh ICM session, making the lock handle invalid for the write. ' +
+          'This tool handles lock → write → unlock atomically on one session. ' +
+          'After writing, call abap_activate(name, CLAS) to activate.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Class name, e.g. /DSN/BP_R_MOD'
+            },
+            include_type: {
+              type: 'string',
+              description:
+                'Which class include to write. Values: ' +
+                '"implementations" = CCIMP (local classes, behavior handler bodies), ' +
+                '"definitions" = CCDEF (local type/class definitions), ' +
+                '"macros" = CCMAC, ' +
+                '"testclasses" = CCAU (ABAP Unit tests).'
+            },
+            source: {
+              type: 'string',
+              description: 'Full source to write into the include'
+            },
+            transport: {
+              type: 'string',
+              description: 'Transport request number. Required for objects outside $TMP.'
+            }
+          },
+          required: ['name', 'include_type', 'source']
+        }
+      },
+      {
         name: 'abap_get_function_group',
         annotations: { readOnlyHint: true },
         description:
@@ -123,6 +160,7 @@ export class SourceHandlers extends BaseHandler {
     switch (toolName) {
       case 'abap_get_source':           return this.handleGetSource(args);
       case 'abap_set_source':           return this.handleSetSource(args);
+      case 'abap_set_class_include':    return this.handleSetClassInclude(args);
       case 'abap_edit_method':          return this.handleEditMethod(args);
       case 'abap_get_function_group':   return this.handleGetFunctionGroup(args);
       default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${toolName}`);
@@ -427,6 +465,68 @@ export class SourceHandlers extends BaseHandler {
         }
       }
       this.fail(formatError(`abap_set_source(${args.name})`, error));
+    }
+  }
+
+  private async handleSetClassInclude(args: any): Promise<any> {
+    const { name, include_type, source, transport } = args;
+    const encoded = name.replace(/\//g, '%2f').replace(/\$/g, '%24').toLowerCase();
+    const objectUrl = `/sap/bc/adt/oo/classes/${encoded}`;
+    const sourceUrl = `${objectUrl}/includes/${include_type}`;
+
+    let lockHandle: string | null = null;
+
+    const doWrite = async (): Promise<void> => {
+      const r = await this.adtclient.lock(objectUrl);
+      lockHandle = r.LOCK_HANDLE;
+      try {
+        await this.adtclient.setObjectSource(sourceUrl, source, lockHandle!, transport);
+      } catch (err: any) {
+        try { await this.adtclient.unLock(objectUrl, lockHandle!); } catch (_) {}
+        lockHandle = null;
+        throw err;
+      }
+      await this.adtclient.unLock(objectUrl, lockHandle!);
+      lockHandle = null;
+    };
+
+    try {
+      let lastError: any;
+      for (const delay of [0, 3000, 8000]) {
+        if (delay > 0) await new Promise(r => setTimeout(r, delay));
+        try {
+          await this.withSession(doWrite);
+          lastError = null;
+          break;
+        } catch (e: any) {
+          lastError = e;
+          if (!/locked by another/i.test(String(e?.message || ''))) break;
+        }
+      }
+      if (lastError) throw lastError;
+
+      return this.success({
+        message: `${include_type} include written for ${name}. Call abap_activate(${name}, CLAS) to activate.`,
+        name,
+        include_type
+      });
+    } catch (error: any) {
+      if (lockHandle) {
+        try { await this.adtclient.unLock(objectUrl, lockHandle); } catch (_) {}
+      }
+      const errMsg = (error?.message || '').toLowerCase();
+      if (!transport && (errMsg.includes('transport') || errMsg.includes('correction') || errMsg.includes('request'))) {
+        const input = await this.elicitForm(
+          `abap_set_class_include(${name}): This object requires a transport. Which transport?`,
+          { transport: { type: 'string', title: 'Transport', description: 'Transport request number (e.g. D23K900123)' } },
+          ['transport']
+        );
+        if (input?.transport) {
+          args.transport = input.transport;
+          return this.handleSetClassInclude(args);
+        }
+      }
+      this.fail(formatError(`abap_set_class_include(${name}/${include_type})`, error));
     }
   }
 
