@@ -2,7 +2,7 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './BaseHandler.js';
 import type { ToolDefinition } from '../types/tools.js';
 import { formatError } from '../lib/errors.js';
-import { parseQueryResponse, decodeQueryResult } from 'abap-adt-api/build/api/tablecontents.js';
+import { parseQueryResponse } from 'abap-adt-api/build/api/tablecontents.js';
 
 export class DataHandlers extends BaseHandler {
   getTools(): ToolDefinition[] {
@@ -74,7 +74,10 @@ export class DataHandlers extends BaseHandler {
             body: sql
           }
         );
-        return decodeQueryResult(parseQueryResponse(response.body));
+        // Use parseQueryResponse only (not decodeQueryResult) — decodeQueryResult calls
+        // decodeSapDate which crashes on undefined when a DATE column has a null value.
+        // Raw YYYYMMDD strings are fine for the LLM.
+        return parseQueryResponse(response.body);
       });
       return this.success({ result });
     } catch (error: any) {
@@ -103,7 +106,7 @@ export class DataHandlers extends BaseHandler {
               body: sql
             }
           );
-          return decodeQueryResult(parseQueryResponse(response.body));
+          return parseQueryResponse(response.body);
         });
         return this.success({ result });
       }
