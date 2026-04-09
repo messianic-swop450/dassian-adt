@@ -179,26 +179,26 @@ export class TransportHandlers extends BaseHandler {
     const sourceUrl = `${objectUrl}/source/main`;
     let lockHandle: string | null = null;
 
-    try {
-      const lockResult = await this.withSession(() =>
-        this.adtclient.lock(objectUrl)
-      );
+    // lock → read → write → unlock must be a SINGLE withSession block.
+    // Separate withSession calls risk session recovery between lock() and setObjectSource(),
+    // which would invalidate the lock handle for the write.
+    const doAssign = async (): Promise<void> => {
+      const lockResult = await this.adtclient.lock(objectUrl);
       lockHandle = lockResult.LOCK_HANDLE;
-
-      // Read current source — write it back unchanged. The transport param does the assignment.
-      const currentSource = await this.withSession(() =>
-        this.adtclient.getObjectSource(sourceUrl)
-      );
-
-      await this.withSession(() =>
-        this.adtclient.setObjectSource(sourceUrl, currentSource as string, lockHandle!, args.transport)
-      );
-
-      await this.withSession(() =>
-        this.adtclient.unLock(objectUrl, lockHandle!)
-      );
+      try {
+        const currentSource = await this.adtclient.getObjectSource(sourceUrl);
+        await this.adtclient.setObjectSource(sourceUrl, currentSource as string, lockHandle!, args.transport);
+      } catch (err: any) {
+        try { await this.adtclient.unLock(objectUrl, lockHandle!); } catch (_) {}
+        lockHandle = null;
+        throw err;
+      }
+      await this.adtclient.unLock(objectUrl, lockHandle!);
       lockHandle = null;
+    };
 
+    try {
+      await this.withSession(doAssign);
       return this.success({
         message: `${args.name} assigned to transport ${args.transport}`,
         name: args.name,
