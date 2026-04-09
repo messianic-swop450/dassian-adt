@@ -461,7 +461,9 @@ export class SourceHandlers extends BaseHandler {
           break;
         } catch (e: any) {
           lastError = e;
-          if (!/locked by another|currently editing/i.test(String(e?.message || ''))) break;
+          // Only retry when the error is a lock contention ("already locked", "locked by user", etc.)
+          // isLocked covers all SAP lock message variants; break on any other error type.
+          if (!parseAdtError(e).isLocked) break;
         }
       }
       if (lastError) {
@@ -543,7 +545,7 @@ export class SourceHandlers extends BaseHandler {
           break;
         } catch (e: any) {
           lastError = e;
-          if (!/locked by another|currently editing/i.test(String(e?.message || ''))) break;
+          if (!parseAdtError(e).isLocked) break;
         }
       }
       if (lastError) throw lastError;

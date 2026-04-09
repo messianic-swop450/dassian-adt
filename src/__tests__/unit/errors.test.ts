@@ -114,8 +114,12 @@ describe('parseAdtError', () => {
       expect(parseAdtError({ message: 'Locked by user PMCF' }).isLocked).toBe(true);
     });
 
-    it('detects "enqueue"', () => {
-      expect(parseAdtError({ message: 'Enqueue failed' }).isLocked).toBe(true);
+    it('detects "enqueue" with user context', () => {
+      // "enqueue" alone is too broad — activation errors also say "enqueue".
+      // Lock is only detected when enqueue failure implies another holder.
+      expect(parseAdtError({ message: 'Enqueue failed by user PMCF' }).isLocked).toBe(true);
+      expect(parseAdtError({ message: 'Enqueue hold by another' }).isLocked).toBe(true);
+      expect(parseAdtError({ message: 'Enqueue failed' }).isLocked).toBe(false);
     });
 
     it('false for normal errors', () => {

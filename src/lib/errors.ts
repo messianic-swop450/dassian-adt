@@ -48,18 +48,27 @@ export function parseAdtError(error: any): AdtErrorInfo {
   }
 
   const msg = rawMessage.toLowerCase();
-  const status: number | undefined = error?.response?.status;
+  // AdtErrorException (from the abap-adt-api library) stores the HTTP status code in .err,
+  // NOT in .response.status — .response is often undefined on these exceptions.
+  // We also check .response?.status for any other error shapes that do set it.
+  const status: number | undefined =
+    error?.response?.status ??
+    (typeof error?.err === 'number' ? error.err : undefined);
 
   // A 400 on basic read operations (get_source, abap_table, abap_search) often means
   // the session cookie has expired — SAP returns 400 instead of 401 in this case.
   // We detect this by checking for 400 with no meaningful error message (empty or generic).
   // Legitimate 400s (bad search pattern, missing param) have descriptive messages.
+  // The library's simpleError() produces "Error 400:Bad Request" (or "Error 400:Session timed out")
+  // when SAP returns a 400 with no meaningful body. The standard axios message "Request failed
+  // with status code 400" also appears in some paths.
   const isAmbiguous400 =
     status === 400 &&
     (rawMessage === 'Unknown error' ||
-      rawMessage.includes('status code 400') ||  // covers "Error: Request failed with status code 400" prefix variants
+      rawMessage.includes('status code 400') ||
       rawMessage.trim() === '' ||
-      rawMessage === 'Bad Request');
+      rawMessage === 'Bad Request' ||
+      /^Error 400:/i.test(rawMessage));  // AdtErrorException from simpleError: "Error 400:Bad Request"
 
   return {
     message: rawMessage,
