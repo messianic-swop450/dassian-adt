@@ -187,11 +187,17 @@ export class TransportHandlers extends BaseHandler {
     const typeKey = args.type.toUpperCase().split('/')[0];
     const isMetadata = METADATA_TYPES.has(typeKey);
 
+    // transportReference: registers the TADIR key on the transport with no source manipulation.
+    // Used for known metadata types, unknown types, and as fallback when source path fails.
+    const doTransportReference = async (): Promise<void> => {
+      await this.withSession(() =>
+        this.adtclient.transportReference('R3TR', typeKey, args.name.toUpperCase(), args.transport)
+      );
+    };
+
     if (isMetadata) {
       try {
-        await this.withSession(() =>
-          this.adtclient.transportReference('R3TR', typeKey, args.name.toUpperCase(), args.transport)
-        );
+        await doTransportReference();
         return this.success({
           message: `${args.name} assigned to transport ${args.transport}`,
           name: args.name,
@@ -202,25 +208,44 @@ export class TransportHandlers extends BaseHandler {
       }
     }
 
-    const objectUrl = buildObjectUrl(args.name, args.type);
-    const sourceUrl = `${objectUrl}/source/main`;
+    // For source types: try lock → read → write → unlock.
+    // If buildObjectUrl throws (unknown type) or the source path fails for any reason,
+    // fall back to transportReference — it handles any valid TADIR object type.
+    let objectUrl: string;
+    try {
+      objectUrl = buildObjectUrl(args.name, args.type);
+    } catch (_) {
+      // Unknown type — no URL path defined; use transportReference directly.
+      try {
+        await doTransportReference();
+        return this.success({
+          message: `${args.name} assigned to transport ${args.transport} (via reference — no ADT source path for type ${args.type})`,
+          name: args.name,
+          transport: args.transport
+        });
+      } catch (refError: any) {
+        this.fail(formatError(`transport_assign(${args.name})`, refError));
+      }
+    }
+
+    const sourceUrl = `${objectUrl!}/source/main`;
     let lockHandle: string | null = null;
 
     // lock → read → write → unlock must be a SINGLE withSession block.
     // Separate withSession calls risk session recovery between lock() and setObjectSource(),
     // which would invalidate the lock handle for the write.
     const doAssign = async (): Promise<void> => {
-      const lockResult = await this.adtclient.lock(objectUrl);
+      const lockResult = await this.adtclient.lock(objectUrl!);
       lockHandle = lockResult.LOCK_HANDLE;
       try {
         const currentSource = await this.adtclient.getObjectSource(sourceUrl);
         await this.adtclient.setObjectSource(sourceUrl, currentSource as string, lockHandle!, args.transport);
       } catch (err: any) {
-        try { await this.adtclient.unLock(objectUrl, lockHandle!); } catch (_) {}
+        try { await this.adtclient.unLock(objectUrl!, lockHandle!); } catch (_) {}
         lockHandle = null;
         throw err;
       }
-      await this.adtclient.unLock(objectUrl, lockHandle!);
+      await this.adtclient.unLock(objectUrl!, lockHandle!);
       lockHandle = null;
     };
 
@@ -233,9 +258,21 @@ export class TransportHandlers extends BaseHandler {
       });
     } catch (error: any) {
       if (lockHandle) {
-        try { await this.adtclient.unLock(objectUrl, lockHandle); } catch (_) {}
+        try { await this.adtclient.unLock(objectUrl!, lockHandle); } catch (_) {}
       }
-      this.fail(formatError(`transport_assign(${args.name})`, error));
+      // Source path failed — fall back to transportReference.
+      // This handles types with ADT URLs but no lockable source (CHDO, IWMO, SICF, WAPA, etc.).
+      try {
+        await doTransportReference();
+        return this.success({
+          message: `${args.name} assigned to transport ${args.transport} (via reference — source path failed: ${error?.message || error})`,
+          name: args.name,
+          transport: args.transport
+        });
+      } catch (_) {
+        // Both paths failed — surface the original source error.
+        this.fail(formatError(`transport_assign(${args.name})`, error));
+      }
     }
   }
 
