@@ -70,7 +70,10 @@ export function parseAdtError(error: any): AdtErrorInfo {
       rawMessage.includes('status code 400') ||
       rawMessage.trim() === '' ||
       rawMessage === 'Bad Request' ||
-      /^Error 400:/i.test(rawMessage));  // AdtErrorException from simpleError: "Error 400:Bad Request"
+      /^Error 400:/i.test(rawMessage) ||   // AdtErrorException from simpleError: "Error 400:Bad Request"
+      msg.includes('csrf') ||              // CSRF token expired/invalid — always a session issue
+      msg.includes('logon required') ||
+      msg.includes('reauthentication'));   // SAP re-auth prompts on expired sessions
 
   return {
     message: rawMessage,
@@ -167,6 +170,16 @@ export function formatError(operation: string, error: any): string {
       `${operation} failed: object not found. ` +
       `Verify the name, type, and that the object exists on this system. ` +
       `(${info.message})`
+    );
+  }
+
+  // Any unclassified HTTP 400 is suspicious — real bad-requests from SAP have descriptive messages
+  // that are caught above. A 400 that falls through here may be a session drop that withSession
+  // didn't catch (unexpected message shape from SAP). Always hint to re-login.
+  if (info.httpStatus === 400) {
+    return (
+      `${operation} failed: ${info.message} ` +
+      `(HTTP 400 — if this is unexpected, the session may have dropped. Call login() to re-authenticate and retry.)`
     );
   }
 
