@@ -10,10 +10,11 @@ export class TransportHandlers extends BaseHandler {
       {
         name: 'transport_create',
         description:
-          'Create a new transport request (Workbench transport). ' +
+          'Create a new transport request. ' +
           'Returns the transport request number (e.g. D23K900123). ' +
           'Note: a child task is created automatically — objects must be assigned via transport_assign. ' +
-          'After creating, use transport_assign to add objects, then transport_release when ready.',
+          'After creating, use transport_assign to add objects, then transport_release when ready. ' +
+          'Set transportType="toc" to create a Transport of Copies (TOC) instead of a Workbench request.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -29,6 +30,11 @@ export class TransportHandlers extends BaseHandler {
             objectType: {
               type: 'string',
               description: 'Type of the anchor object (e.g. CLAS, DDLS/DF)'
+            },
+            transportType: {
+              type: 'string',
+              enum: ['workbench', 'toc'],
+              description: 'Transport type: "workbench" (default, TRFUNCTION=K) or "toc" (Transport of Copies, TRFUNCTION=T)'
             }
           },
           required: ['description', 'objectName', 'objectType']
@@ -127,10 +133,23 @@ export class TransportHandlers extends BaseHandler {
     // package is optional — when omitted SAP derives it from the anchor object's REF URL.
     // Passing a wrong package causes "Error during deserialization" from SAP.
     const devclass = args.package || '';
+    // ADTClient.createTransport hardcodes OPERATION="I" (Workbench/K).
+    // For Transport of Copies (TOC), bypass it and call the lower-level function with OPERATION="T".
+    const isToc = args.transportType === 'toc';
     try {
-      const result = await this.withSession(() =>
-        this.adtclient.createTransport(sourceUrl, args.description, devclass)
-      );
+      let result: any;
+      if (isToc) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const transportApi = require('abap-adt-api/build/api/transports.js');
+        const h = (this.adtclient as any).h;
+        result = await this.withSession(() =>
+          transportApi.createTransport(h, sourceUrl, args.description, devclass, 'T')
+        );
+      } else {
+        result = await this.withSession(() =>
+          this.adtclient.createTransport(sourceUrl, args.description, devclass)
+        );
+      }
       const transportNumber = (result as any)?.transportNumber || result;
       // Resolve the task number — abap_set_source needs the TASK (child), not the REQUEST (parent).
       // The task number is returned by resolveTaskNumber after userTransports becomes available.

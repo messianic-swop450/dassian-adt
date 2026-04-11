@@ -19,6 +19,7 @@ export interface ToolDefinition {
       type: string;
       description?: string;
       optional?: boolean;
+      enum?: string[];
     }>;
     required?: string[];
   };

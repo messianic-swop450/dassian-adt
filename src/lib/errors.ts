@@ -12,6 +12,8 @@ export interface AdtErrorInfo {
   isNotFound: boolean;
   /** True when a 400 has no meaningful body — typically a stale CSRF token or expired session. */
   isAmbiguous400: boolean;
+  /** True when lock returns 405 — DDIC types (DDLS, DDLX, TABL) use internal enqueue, not ADT HTTP locks. */
+  isLockNotSupported: boolean;
   httpStatus?: number;
 }
 
@@ -101,6 +103,10 @@ export function parseAdtError(error: any): AdtErrorInfo {
       msg.includes('does not exist') ||
       msg.includes('not found'),
     isAmbiguous400,
+    isLockNotSupported:
+      status === 405 ||
+      msg.includes('method not allowed') ||
+      msg.includes('method not supported'),
     httpStatus: status,
   };
 }
@@ -125,6 +131,14 @@ export function formatError(operation: string, error: any): string {
     return (
       `${operation} failed: HTTP 400 with no error detail — this is a stale CSRF token or expired ` +
       `session, NOT a bad request. Call login() to establish a fresh session, then retry the operation.`
+    );
+  }
+
+  if (info.isLockNotSupported) {
+    return (
+      `${operation} failed: HTTP 405 — this object type does not support ADT HTTP locks. ` +
+      `DDIC-managed types (DDLS, DDLX, TABL, DTEL, DOMA, etc.) use internal enqueue locks. ` +
+      `The server will attempt a lockless write with transport assignment.`
     );
   }
 
