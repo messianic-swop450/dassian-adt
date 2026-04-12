@@ -1,0 +1,1548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dassian ADT MCP — Tool Reference</title>
+  <style>
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3a;
+      --text:      #d4d8e8;
+      --muted:     #7a7f96;
+      --accent:    #5b7cf6;
+      --accent2:   #7c5bf6;
+      --green:     #4caf81;
+      --orange:    #e07b39;
+      --red:       #e05555;
+      --yellow:    #d4a94a;
+      --sidebar-w: 260px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      display: flex;
+    }
+
+    /* ── Sidebar ── */
+    nav {
+      width: var(--sidebar-w);
+      min-height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    nav .logo {
+      padding: 20px 18px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    nav .logo span {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.3px;
+    }
+    nav .logo small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 3px;
+    }
+    nav .count-badge {
+      display: inline-block;
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 10px;
+      padding: 1px 7px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    nav .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      padding: 14px 18px 4px;
+    }
+    nav a {
+      display: block;
+      padding: 5px 18px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      border-left: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    nav a:hover { color: var(--text); border-left-color: var(--accent); }
+    nav a.active { color: var(--accent); border-left-color: var(--accent); }
+
+    /* ── Main content ── */
+    main {
+      flex: 1;
+      max-width: 920px;
+      padding: 40px 48px;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 36px;
+    }
+    .subtitle strong { color: var(--text); }
+
+    h2 {
+      font-size: 19px;
+      font-weight: 700;
+      color: #fff;
+      margin: 52px 0 20px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    h2 .section-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+    h2 .count { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+
+    /* ── Tool card ── */
+    .tool {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 18px;
+      overflow: hidden;
+    }
+    .tool-header {
+      padding: 14px 18px 12px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .tool-header:hover { background: rgba(91,124,246,0.04); }
+    .tool-name {
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+      flex: 1;
+    }
+    .tool-desc {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+    .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+    .badge-read    { background: rgba(76,175,129,0.15); color: var(--green); }
+    .badge-write   { background: rgba(224,123,57,0.15); color: var(--orange); }
+    .badge-destroy { background: rgba(224,85,85,0.15);  color: var(--red); }
+    .badge-multi   { background: rgba(91,124,246,0.15); color: var(--accent); }
+
+    .tool-body {
+      border-top: 1px solid var(--border);
+      padding: 16px 18px 18px;
+    }
+
+    /* ── Params table ── */
+    .params-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      text-align: left;
+      padding: 6px 10px;
+      font-weight: 600;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 7px 10px;
+      border-bottom: 1px solid rgba(42,45,58,0.6);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    .p-name {
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      color: #c8d0f0;
+      white-space: nowrap;
+    }
+    .p-req {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .p-req.req  { background: rgba(224,123,57,0.2); color: var(--orange); }
+    .p-req.opt  { background: rgba(122,127,150,0.15); color: var(--muted); }
+    .p-type {
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      color: var(--yellow);
+      font-size: 12px;
+    }
+    .enum-vals {
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      color: var(--green);
+      font-size: 11px;
+      margin-top: 3px;
+    }
+
+    /* ── Notes / workflow boxes ── */
+    .note {
+      margin-top: 14px;
+      padding: 11px 14px;
+      border-radius: 7px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .note-info    { background: rgba(91,124,246,0.1);  border-left: 3px solid var(--accent); color: #b0bbf0; }
+    .note-warn    { background: rgba(224,123,57,0.1);  border-left: 3px solid var(--orange); color: #d8aa80; }
+    .note-danger  { background: rgba(224,85,85,0.1);   border-left: 3px solid var(--red);    color: #e09898; }
+    .note strong  { font-weight: 600; }
+    code {
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      font-size: 12px;
+      background: rgba(255,255,255,0.06);
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: #c8d0f0;
+    }
+
+    /* ── Workflow box ── */
+    .workflow {
+      background: rgba(91,124,246,0.07);
+      border: 1px solid rgba(91,124,246,0.2);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+    .workflow-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .workflow ol, .workflow ul { padding-left: 18px; }
+    .workflow li { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+    .workflow li code { color: #aabff5; }
+
+    /* ── Intro ── */
+    .intro-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 14px;
+      margin: 24px 0 36px;
+    }
+    .intro-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .intro-card .ic-num {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--accent);
+      line-height: 1;
+    }
+    .intro-card .ic-label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 60px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 900px) {
+      nav { display: none; }
+      main { padding: 24px 20px; }
+      .intro-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════ SIDEBAR ══════════════════════════════════════ -->
+<nav>
+  <div class="logo">
+    <span>Dassian ADT MCP</span>
+    <small>Tool Reference — 53 tools</small>
+  </div>
+
+  <div class="section-label">Source Code</div>
+  <a href="#source">abap_get_source</a>
+  <a href="#source">abap_set_source</a>
+  <a href="#source">abap_edit_method</a>
+  <a href="#source">abap_set_class_include</a>
+  <a href="#source">abap_get_function_group</a>
+  <a href="#source">abap_pretty_print</a>
+  <a href="#source">abap_revisions</a>
+
+  <div class="section-label">Object Management</div>
+  <a href="#objects">abap_create</a>
+  <a href="#objects">abap_delete</a>
+  <a href="#objects">abap_activate</a>
+  <a href="#objects">abap_activate_batch</a>
+  <a href="#objects">abap_search</a>
+  <a href="#objects">abap_object_info</a>
+
+  <div class="section-label">Code Quality</div>
+  <a href="#quality">abap_syntax_check</a>
+  <a href="#quality">abap_atc_run</a>
+  <a href="#quality">abap_atc_variants</a>
+  <a href="#quality">abap_where_used</a>
+  <a href="#quality">abap_find_definition</a>
+  <a href="#quality">abap_fix_proposals</a>
+
+  <div class="section-label">Data &amp; Query</div>
+  <a href="#data">abap_table</a>
+  <a href="#data">abap_query</a>
+
+  <div class="section-label">Execution</div>
+  <a href="#run">abap_run</a>
+  <a href="#run">abap_unlock</a>
+
+  <div class="section-label">Transports</div>
+  <a href="#transports">transport_create</a>
+  <a href="#transports">transport_assign</a>
+  <a href="#transports">transport_release</a>
+  <a href="#transports">transport_list</a>
+  <a href="#transports">transport_info</a>
+  <a href="#transports">transport_contents</a>
+  <a href="#transports">transport_delete</a>
+  <a href="#transports">transport_set_owner</a>
+  <a href="#transports">transport_add_user</a>
+
+  <div class="section-label">Testing</div>
+  <a href="#testing">abap_create_test_include</a>
+  <a href="#testing">abap_unit_test</a>
+
+  <div class="section-label">RAP / Business Services</div>
+  <a href="#rap">rap_publish_binding</a>
+  <a href="#rap">rap_binding_details</a>
+
+  <div class="section-label">DDIC Introspection</div>
+  <a href="#ddic">ddic_element</a>
+  <a href="#ddic">ddic_references</a>
+
+  <div class="section-label">Runtime Traces</div>
+  <a href="#traces">traces_list</a>
+  <a href="#traces">traces_set_parameters</a>
+  <a href="#traces">traces_create_config</a>
+  <a href="#traces">traces_hit_list</a>
+  <a href="#traces">traces_statements</a>
+  <a href="#traces">traces_db_access</a>
+  <a href="#traces">traces_delete</a>
+  <a href="#traces">traces_delete_config</a>
+
+  <div class="section-label">gCTS</div>
+  <a href="#git">git_repos</a>
+  <a href="#git">git_pull</a>
+
+  <div class="section-label">System</div>
+  <a href="#system">login</a>
+  <a href="#system">healthcheck</a>
+  <a href="#system">abap_get_dump</a>
+  <a href="#system">abap_inactive_objects</a>
+  <a href="#system">abap_annotation_defs</a>
+  <a href="#system">raw_http</a>
+</nav>
+
+<!-- ════════════════════════════════════ MAIN ════════════════════════════════════════ -->
+<main>
+
+  <h1>Dassian ADT MCP — Tool Reference</h1>
+  <p class="subtitle">
+    An MCP server connecting AI coding assistants to <strong>SAP ABAP Development Tools (ADT)</strong>
+    via REST. Supports multiple SAP systems simultaneously — pass <code>sap_system_id</code> on any call.
+  </p>
+
+  <div class="intro-grid">
+    <div class="intro-card"><div class="ic-num">53</div><div class="ic-label">Total tools</div></div>
+    <div class="intro-card"><div class="ic-num">14</div><div class="ic-label">SAP systems</div></div>
+    <div class="intro-card"><div class="ic-num">12</div><div class="ic-label">Tool categories</div></div>
+  </div>
+
+  <div class="note note-info">
+    <strong>Multi-system routing:</strong> Every tool accepts an optional <code>sap_system_id</code> parameter.
+    Available IDs: <code>x22</code>, <code>d21</code>, <code>d23</code>, <code>d25</code>, <code>c22</code>,
+    <code>c23</code>, <code>c25</code>, <code>k22</code>, <code>q23</code>, <code>sv7</code>,
+    <code>t21</code>, <code>z21</code>, <code>z25</code>, <code>m25</code>. Default: <code>x22</code>.
+  </div>
+
+
+  <!-- ═══════════════════════════ SOURCE CODE ═══════════════════════════════════════ -->
+  <h2 id="source">
+    <span class="section-icon" style="background:rgba(91,124,246,0.15)">📄</span>
+    Source Code
+    <span class="count">7 tools</span>
+  </h2>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_get_source</div>
+        <div class="tool-desc">Get the ABAP source code for any object by name and type. For large classes, use <code>compact=true</code> to retrieve only the CLASS DEFINITION block — 10–30× smaller.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name, e.g. <code>/DSN/CL_MY_CLASS</code></td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type: <code>CLAS</code>, <code>PROG/P</code>, <code>DDLS/DF</code>, <code>ENHO/XHH</code>, <code>FUGR/FF</code>, etc.</td></tr>
+        <tr><td class="p-name">fugr</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Parent function group — required for <code>FUGR/FF</code> if auto-discovery fails</td></tr>
+        <tr><td class="p-name">compact</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>If true and type=CLAS, strip all method bodies, return only the CLASS DEFINITION</td></tr>
+      </table>
+      <div class="note note-warn"><strong>Note:</strong> Does not work for <code>TABL</code> or <code>STRU</code> — those have no source. Use <code>abap_table</code> instead.</div>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_set_source</div>
+        <div class="tool-desc">Write ABAP source code for an object. Handles lock → write → unlock automatically. For objects outside $TMP, provide a transport number. Call <code>abap_activate</code> after writing.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type</td></tr>
+        <tr><td class="p-name">source</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Full ABAP source code to write</td></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Transport request number. Required for objects outside <code>$TMP</code></td></tr>
+        <tr><td class="p-name">fugr</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Parent function group — required for <code>FUGR/FF</code> if auto-discovery fails</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_edit_method</div>
+        <div class="tool-desc">Surgically edit a single method inside an ABAP class without touching the rest of the source. Does a scoped find/replace within the method body, syntax-checks the reconstructed class, then writes it back. Much safer than <code>abap_set_source</code> for targeted fixes.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Class name</td></tr>
+        <tr><td class="p-name">method</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Method name (case-insensitive), e.g. <code>GET_HEADER</code></td></tr>
+        <tr><td class="p-name">old_string</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Exact string to find within the method body (case-sensitive)</td></tr>
+        <tr><td class="p-name">new_string</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Replacement string</td></tr>
+        <tr><td class="p-name">replace_all</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Replace all occurrences (default: false — errors if more than one match)</td></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Transport number. Required for objects outside <code>$TMP</code></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_set_class_include</div>
+        <div class="tool-desc">Write source to a specific include of an ABAP class: implementations, definitions, macros, or testclasses. Handles lock → write → unlock atomically. Use after <code>abap_create</code> to populate a class's local types or local test classes.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Class name</td></tr>
+        <tr><td class="p-name">include_type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td><div class="enum-vals">implementations · definitions · macros · testclasses</div></td></tr>
+        <tr><td class="p-name">source</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Full source to write into the include</td></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Transport number. Required for objects outside <code>$TMP</code></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_get_function_group</div>
+        <div class="tool-desc">Get all source for a function group in one call: top include, all user includes (U01–UXX), and all function module sources. Returns a map of include/FM name → source. More efficient than multiple <code>abap_get_source</code> calls.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Function group name, e.g. <code>/DSN/010BWE</code> or <code>ZBILLING</code></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_pretty_print</div>
+        <div class="tool-desc">Format ABAP source code using the SAP Pretty Printer. Returns the formatted source — does not write back to the system. Pass the result to <code>abap_set_source</code> if needed.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">source</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>ABAP source code to format</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_revisions</div>
+        <div class="tool-desc">Get the revision history for an ABAP object (transport-based change log). Returns revisions with date, author, transport number, and version title. For classes, optionally specify a class include.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type, e.g. <code>CLAS</code>, <code>PROG/P</code></td></tr>
+        <tr><td class="p-name">include</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>For CLAS: <div class="enum-vals">definitions · implementations · macros · testclasses · main</div></td></tr>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ OBJECT MANAGEMENT ═══════════════════════════════════ -->
+  <h2 id="objects">
+    <span class="section-icon" style="background:rgba(212,169,74,0.15)">📦</span>
+    Object Management
+    <span class="count">6 tools</span>
+  </h2>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_create</div>
+        <div class="tool-desc">Create a new ABAP object. For temporary objects use <code>package=$TMP</code> — no transport needed. Supports CLAS, PROG, FUGR, DDLS, BDEF, INTF, TABL, DCLS, SRVD, SRVB, DEVC, and more.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name, e.g. <code>ZCL_MY_CLASS</code> or <code>/DSN/MY_CLASS</code></td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type. Short forms accepted: <code>CLAS</code>→<code>CLAS/OC</code>, <code>PROG</code>→<code>PROG/P</code>, etc.</td></tr>
+        <tr><td class="p-name">description</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Short description shown in ABAP Workbench</td></tr>
+        <tr><td class="p-name">package</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Package name, e.g. <code>$TMP</code> or <code>/DSN/CORE</code>. Also accepted as <code>devclass</code>.</td></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Transport number. Required for non-<code>$TMP</code> packages.</td></tr>
+      </table>
+      <div class="note note-info"><strong>BDEF activation order:</strong> DDLS → BDEF → behavior pool class</div>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_delete</div>
+        <div class="tool-desc">Delete an ABAP object. Confirms with the user before deleting non-$TMP objects. Locks the object, deletes it, and releases the lock.</div>
+        <div class="badges"><span class="badge badge-destroy">destructive</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type</td></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Transport number. Required for non-<code>$TMP</code> objects.</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_activate</div>
+        <div class="tool-desc">Activate an ABAP object, making it the active version. Must be called after <code>abap_set_source</code> or <code>abap_create</code>. Returns <code>activated:true</code> with empty messages if clean, or <code>activated:false</code> with error messages if activation fails. Offers to activate still-inactive dependents.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type</td></tr>
+        <tr><td class="p-name">fugr</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Parent function group. Required when type=<code>FUGR/FF</code>.</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_activate_batch</div>
+        <div class="tool-desc">Activate multiple ABAP objects in a single ADT request. More efficient than repeated <code>abap_activate</code> calls. On failure, offers to retry each object individually to isolate which ones are failing.</div>
+        <div class="badges"><span class="badge badge-write">write</span><span class="badge badge-multi">batch</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">objects</td><td class="p-type">array</td><td><span class="p-req req">req</span></td><td>Array of <code>{ name, type }</code> objects to activate</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_search</div>
+        <div class="tool-desc">Search for ABAP objects by name pattern. Returns object names, types, and ADT URLs. Only trailing wildcards work — <code>/DSN/BIL*</code> works, <code>*BILL*</code> does not. Invalid patterns are auto-rewritten with a warning.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">query</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Search string. Trailing wildcards only, e.g. <code>ZCL_MY_*</code></td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Filter by object type. Omit to search all types.</td></tr>
+        <tr><td class="p-name">max</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>Max results (default: 50)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_object_info</div>
+        <div class="tool-desc">Get metadata for an ABAP object: package, transport layer, active/inactive status, and structural information. Surfaces the <code>upgradeFlag</code> — if true, the object is in SPAU adjustment mode and cannot be edited via ADT.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type</td></tr>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ CODE QUALITY ══════════════════════════════════════ -->
+  <h2 id="quality">
+    <span class="section-icon" style="background:rgba(76,175,129,0.15)">✅</span>
+    Code Quality &amp; Analysis
+    <span class="count">6 tools</span>
+  </h2>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_syntax_check</div>
+        <div class="tool-desc">Run a syntax check on an ABAP object. Returns errors and warnings with line numbers. Use after writing source to verify correctness before activating. Supports all types including FUGR/FF.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type</td></tr>
+        <tr><td class="p-name">fugr</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Parent function group — required for <code>FUGR/FF</code></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_atc_run</div>
+        <div class="tool-desc">Run ABAP Test Cockpit (ATC) checks on an object. Returns findings grouped by priority (error P1, warning P2, info P3). Detects if a variant name silently falls back to DEFAULT before running, and prompts for confirmation.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type</td></tr>
+        <tr><td class="p-name">variant</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>ATC check variant name (case-sensitive, matches SATC config). Default: <code>DEFAULT</code></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_atc_variants</div>
+        <div class="tool-desc">Return ATC system customizing and probe whether a specific variant name resolves to DEFAULT (silent fallback detection). SAP does not expose a standard API to list variant names — use SATC transaction for that.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">probe_variant</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>A variant name to probe. Same worklistId as DEFAULT = SAP fell back silently.</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_where_used</div>
+        <div class="tool-desc">Find all references to an ABAP object (where-used list). Returns every object that references the target, with name, type, package. Equivalent to Ctrl+Shift+G in Eclipse ADT. For class methods use type <code>CLAS/OM</code>.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name. For methods: <code>CLASS::METHOD</code> or class name + <code>method</code> param</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type. Use <code>CLAS/OM</code> for class methods.</td></tr>
+        <tr><td class="p-name">method</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Method name when type=<code>CLAS/OM</code></td></tr>
+        <tr><td class="p-name">line</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>Line number for symbol-level where-used</td></tr>
+        <tr><td class="p-name">column</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>Column number (used with line)</td></tr>
+        <tr><td class="p-name">snippets</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Fetch code snippets showing how the object is used (default: false)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_find_definition</div>
+        <div class="tool-desc">Jump to the definition of an ABAP symbol at a specific cursor position. Requires the exact line/column from the source — not a name lookup. Equivalent to F3 / Ctrl+Click in Eclipse ADT.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name containing the symbol</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type</td></tr>
+        <tr><td class="p-name">line</td><td class="p-type">number</td><td><span class="p-req req">req</span></td><td>Line number (1-based)</td></tr>
+        <tr><td class="p-name">column</td><td class="p-type">number</td><td><span class="p-req req">req</span></td><td>Column number (1-based)</td></tr>
+        <tr><td class="p-name">end_column</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>End column (defaults to column+1)</td></tr>
+        <tr><td class="p-name">implementation</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Jump to implementation rather than declaration (default: false)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_fix_proposals</div>
+        <div class="tool-desc">Get ADT quick-fix proposals for a syntax error at a specific line/column. Returns proposed fixes with descriptions and the exact source changes to apply.</div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type</td></tr>
+        <tr><td class="p-name">line</td><td class="p-type">number</td><td><span class="p-req req">req</span></td><td>Line number of the error (from syntax check)</td></tr>
+        <tr><td class="p-name">column</td><td class="p-type">number</td><td><span class="p-req req">req</span></td><td>Column number of the error</td></tr>
+      </table>
+      <div class="workflow">
+        <div class="workflow-title">Workflow</div>
+        <ol>
+          <li>Run <code>abap_syntax_check</code> — get error line/column</li>
+          <li>Call <code>abap_fix_proposals</code> at that position</li>
+          <li>Apply the chosen fix with <code>abap_set_source</code> or <code>abap_edit_method</code></li>
+          <li>Run <code>abap_activate</code></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ DATA ══════════════════════════════════════════════ -->
+  <h2 id="data">
+    <span class="section-icon" style="background:rgba(212,169,74,0.12)">🗄️</span>
+    Data &amp; Query
+    <span class="count">2 tools</span>
+  </h2>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_table</div>
+        <div class="tool-desc">Read contents of an ABAP table or CDS view. Supports optional WHERE clause with LIKE, BETWEEN, and comparisons. For multi-table joins or subqueries, use <code>abap_query</code>.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Table or CDS view name, e.g. <code>VBRP</code> or <code>/DSN/C_CPR_SQL_VIEW</code></td></tr>
+        <tr><td class="p-name">where</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>OpenSQL WHERE clause, e.g. <code>VBELN = '0090001234'</code></td></tr>
+        <tr><td class="p-name">limit</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>Max rows (default: 100)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_query</div>
+        <div class="tool-desc">Execute a SQL query against the SAP database via ADT. Use OpenSQL syntax. For complex data investigations with ABAP logic, prefer <code>abap_run</code>.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">sql</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>OpenSQL query, e.g. <code>SELECT * FROM VBRP WHERE VBELN = '...' UP TO 10 ROWS</code></td></tr>
+        <tr><td class="p-name">limit</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>Max rows (default: 100)</td></tr>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ EXECUTION ══════════════════════════════════════════ -->
+  <h2 id="run">
+    <span class="section-icon" style="background:rgba(224,123,57,0.15)">▶️</span>
+    Execution
+    <span class="count">2 tools</span>
+  </h2>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_run</div>
+        <div class="tool-desc">Create a temporary ABAP class in $TMP, run it via <code>IF_OO_ADT_CLASSRUN</code>, capture output, then delete it. The standard pattern for querying live SAP data or executing one-off ABAP logic. Provide only the body of the run method — the class wrapper is generated automatically.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">methodBody</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>ABAP code to execute. Use <code>out->write()</code> for output. Also accepted as <code>code</code>.</td></tr>
+        <tr><td class="p-name">className</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Temp class name (default: <code>ZCL_TMP_ADT_RUN</code>). Change if you get "already exists" errors.</td></tr>
+        <tr><td class="p-name">interfaceMethod</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td><code>run</code> (≤2023) or <code>main</code> (2024+). Auto-detected by default.</td></tr>
+        <tr><td class="p-name">keepClass</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Skip deletion after run — useful for debugging (default: false)</td></tr>
+      </table>
+      <div class="note note-warn">
+        <strong>ABAP style note:</strong> Declare variables with <code>DATA</code> before <code>SELECT</code>.
+        Use old-style <code>SELECT * FROM table INTO TABLE lt WHERE ...</code> — inline <code>@DATA</code> declarations with <code>UP TO N ROWS</code> do not work inside this method. To limit rows, use <code>DELETE lt FROM N.</code> after the SELECT.
+      </div>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_unlock</div>
+        <div class="tool-desc">Release the ABAP enqueue lock (SM12) for an object. Use when <code>abap_set_source</code> fails because a previous MCP operation crashed before unlocking. Only affects locks held by the current SAP user. Supported types: CLAS, INTF, PROG, FUGR.</div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td><div class="enum-vals">CLAS · INTF · PROG · FUGR</div></td></tr>
+      </table>
+      <div class="note note-info"><strong>Limitation:</strong> Clears the enqueue lock (SM12) only — not the ICM HTTP session lock. If the object is still blocked after this, kill the stale ICM session in SM04.</div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ TRANSPORTS ════════════════════════════════════════ -->
+  <h2 id="transports">
+    <span class="section-icon" style="background:rgba(124,91,246,0.15)">🚚</span>
+    Transport Management
+    <span class="count">9 tools</span>
+  </h2>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">transport_create</div>
+        <div class="tool-desc">Create a new transport request. Returns the transport request number and child task number. Objects must be assigned via <code>transport_assign</code>. Supports Workbench (default) or Transport of Copies (TOC).</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">description</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Short description shown in STMS (max 60 chars)</td></tr>
+        <tr><td class="p-name">objectName</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Anchor object name (required by ADT API)</td></tr>
+        <tr><td class="p-name">objectType</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Anchor object type</td></tr>
+        <tr><td class="p-name">package</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Target package (SAP derives it from the anchor if omitted)</td></tr>
+        <tr><td class="p-name">transportType</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td><div class="enum-vals">workbench (default) · toc</div></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">transport_assign</div>
+        <div class="tool-desc">Assign an existing object to a transport request via no-op save (lock → read → write same source with transport → unlock). The source is not changed — only the transport linkage is created.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type</td></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Transport request number (not the child task)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">transport_release</div>
+        <div class="tool-desc">Release a transport request. Automatically releases child tasks first, then the parent request. Confirms with the user before proceeding.</div>
+        <div class="badges"><span class="badge badge-destroy">destructive</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Transport request number</td></tr>
+        <tr><td class="p-name">ignoreAtc</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Skip ATC checks on release (default: false)</td></tr>
+      </table>
+      <div class="note note-danger"><strong>Warning:</strong> Irreversible. Only call when explicitly asked to release. Never call automatically after activation.</div>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">transport_list</div>
+        <div class="tool-desc">List open transport requests for a user. Falls back to querying E070 directly if the CTS endpoint returns empty results.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">user</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>SAP user ID. Omit to use the session user.</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">transport_info</div>
+        <div class="tool-desc">Get the current transport assignment for an object (which transport it is recorded on).</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object type</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">transport_contents</div>
+        <div class="tool-desc">List all objects on a transport request (E071 table). Returns PGMID, object type, and object name for every entry. Use to audit what will be released.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Transport request number, e.g. <code>D23K900123</code></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">transport_delete</div>
+        <div class="tool-desc">Delete a transport request. Only works on modifiable (not yet released) requests. Confirms with the user before proceeding.</div>
+        <div class="badges"><span class="badge badge-destroy">destructive</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Transport request number</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">transport_set_owner</div>
+        <div class="tool-desc">Change the owner of a transport request.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Transport request number</td></tr>
+        <tr><td class="p-name">user</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>New owner user ID</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">transport_add_user</div>
+        <div class="tool-desc">Add a user to a transport request (gives them edit access).</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Transport request number</td></tr>
+        <tr><td class="p-name">user</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>SAP user ID to add</td></tr>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ TESTING ══════════════════════════════════════════ -->
+  <h2 id="testing">
+    <span class="section-icon" style="background:rgba(76,175,129,0.12)">🧪</span>
+    Testing
+    <span class="count">2 tools</span>
+  </h2>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_create_test_include</div>
+        <div class="tool-desc">Scaffold a test class include (CCAU) for an existing ABAP class. Creates the include if it does not already exist, preparing the class for ABAP Unit tests. After creation, use <code>abap_set_class_include(include_type="testclasses")</code> to write test code.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Class name, e.g. <code>/DSN/CL_MY_CLASS</code></td></tr>
+        <tr><td class="p-name">transport</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Transport number. Required for classes outside <code>$TMP</code>.</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_unit_test</div>
+        <div class="tool-desc">Run ABAP Unit tests for an object and return pass/fail results. Returns a summary (total/passed/failed/errors) plus per-method detail for failures with assertion messages, details, and stack traces.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Object name</td></tr>
+        <tr><td class="p-name">type</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td><div class="enum-vals">CLAS (default) · PROG/P</div></td></tr>
+        <tr><td class="p-name">risk</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td><div class="enum-vals">harmless · dangerous · critical · all (default)</div></td></tr>
+        <tr><td class="p-name">duration</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td><div class="enum-vals">short · medium · long · all (default)</div></td></tr>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ RAP ══════════════════════════════════════════════ -->
+  <h2 id="rap">
+    <span class="section-icon" style="background:rgba(91,124,246,0.12)">🔗</span>
+    RAP / Business Services
+    <span class="count">2 tools</span>
+  </h2>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">rap_publish_binding</div>
+        <div class="tool-desc">Publish or unpublish an OData service binding. Publishing generates the service URL and makes it accessible for consumption. Use after creating or updating a SRVB object.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Service binding name, e.g. <code>/DSN/UI_MYSERVICE_O4</code></td></tr>
+        <tr><td class="p-name">version</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Binding version number, e.g. <code>0001</code></td></tr>
+        <tr><td class="p-name">action</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td><div class="enum-vals">publish · unpublish</div></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">rap_binding_details</div>
+        <div class="tool-desc">Get the service binding details for a published OData binding. Returns the service URL, entity sets, navigation properties, and annotation URL. For bindings with multiple services, use <code>index</code> to select which one.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">name</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Service binding name, e.g. <code>/DSN/UI_MYSERVICE_O4</code></td></tr>
+        <tr><td class="p-name">index</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>Service index (default: 0)</td></tr>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ DDIC ══════════════════════════════════════════════ -->
+  <h2 id="ddic">
+    <span class="section-icon" style="background:rgba(212,169,74,0.12)">🏗️</span>
+    DDIC Introspection
+    <span class="count">2 tools</span>
+  </h2>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">ddic_element</div>
+        <div class="tool-desc">Retrieve DDIC metadata for a CDS view or data element — field names, data types, key flags, data element labels, lengths, decimals, and CDS annotations. For associations, set <code>getTargetForAssociation=true</code> to resolve the target entity's fields.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">path</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>CDS entity or data element path, e.g. <code>/DSN/C_MY_VIEW</code>. Multiple paths: comma-separated.</td></tr>
+        <tr><td class="p-name">getTargetForAssociation</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Resolve association targets (default: false)</td></tr>
+        <tr><td class="p-name">getExtensionViews</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Include extension views (default: false)</td></tr>
+        <tr><td class="p-name">getSecondaryObjects</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Include secondary objects (default: false)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">ddic_references</div>
+        <div class="tool-desc">List all DDIC objects that reference a given CDS entity or data element. Returns each referencing object's URI, type, name, and path. Useful for understanding the impact of changing a data model.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">path</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>CDS entity or DDIC path. Multiple paths: comma-separated.</td></tr>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ TRACES ═══════════════════════════════════════════ -->
+  <h2 id="traces">
+    <span class="section-icon" style="background:rgba(224,85,85,0.12)">⚡</span>
+    Runtime Traces
+    <span class="count">8 tools</span>
+  </h2>
+
+  <div class="workflow" style="margin-bottom:18px">
+    <div class="workflow-title">Typical trace workflow</div>
+    <ol>
+      <li>Call <code>traces_set_parameters</code> → get <code>parametersId</code></li>
+      <li>Call <code>traces_create_config</code> with the <code>parametersId</code>, target user, and process/object type</li>
+      <li>Have the user run the transaction/URL/FM to be traced</li>
+      <li>Call <code>traces_list</code> to find the captured run ID</li>
+      <li>Call <code>traces_hit_list</code>, <code>traces_statements</code>, or <code>traces_db_access</code> with the run ID</li>
+      <li>Call <code>traces_delete</code> and <code>traces_delete_config</code> to clean up</li>
+    </ol>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">traces_list</div>
+        <div class="tool-desc">List ABAP runtime trace runs stored on the system. Returns each run with ID, title, author, runtime breakdown (ABAP / system / DB), object name, and state.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">user</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Filter by user. Omit to use the session user.</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">traces_set_parameters</div>
+        <div class="tool-desc">Configure trace collection parameters and return a <code>parametersId</code>. The ID is required by <code>traces_create_config</code>. Sensible defaults are applied — only override for specific trace granularity.</div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">description</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Human-readable label for this parameter set</td></tr>
+        <tr><td class="p-name">sqlTrace</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Trace SQL statements (default: true)</td></tr>
+        <tr><td class="p-name">allProceduralUnits</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Trace all FMs, methods, subroutines (default: true)</td></tr>
+        <tr><td class="p-name">allMiscAbapStatements</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Trace misc ABAP statements (default: false)</td></tr>
+        <tr><td class="p-name">allInternalTableEvents</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Trace internal table ops (default: false)</td></tr>
+        <tr><td class="p-name">aggregate</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Aggregate identical calls (default: true)</td></tr>
+        <tr><td class="p-name">maxSizeForTraceFile</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>Max trace file size in bytes (default: 10,000,000)</td></tr>
+        <tr><td class="p-name">maxTimeForTracing</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>Max trace duration in seconds (default: 300)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">traces_create_config</div>
+        <div class="tool-desc">Create a trace configuration that captures the next execution of a user's request. Activates when the target user next runs the specified transaction, URL, report, or FM.</div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">parametersId</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>ID from <code>traces_set_parameters</code></td></tr>
+        <tr><td class="p-name">description</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Label for this trace configuration</td></tr>
+        <tr><td class="p-name">traceUser</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>SAP user whose next execution to trace</td></tr>
+        <tr><td class="p-name">traceClient</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>SAP client (default: current session client)</td></tr>
+        <tr><td class="p-name">processType</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td><div class="enum-vals">HTTP · DIALOG · RFC · BATCH · SHARED_OBJECTS_AREA · ANY (default)</div></td></tr>
+        <tr><td class="p-name">objectType</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td><div class="enum-vals">FUNCTION_MODULE · URL · TRANSACTION · REPORT · SHARED_OBJECTS_AREA · ANY (default)</div></td></tr>
+        <tr><td class="p-name">expires</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Expiry datetime ISO 8601 (default: 24h from now)</td></tr>
+        <tr><td class="p-name">maximalExecutions</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>Stop after this many captures (default: 1)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">traces_hit_list</div>
+        <div class="tool-desc">Get the hit list (call frequency / gross time breakdown) for a trace run. Shows the most expensive program units ranked by gross time and hit count.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">id</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Trace run ID from <code>traces_list</code></td></tr>
+        <tr><td class="p-name">withSystemEvents</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Include system-level events (default: false)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">traces_statements</div>
+        <div class="tool-desc">Get individual ABAP statement execution details for a trace run. Returns statement-level timing with calling program context.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">id</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Trace run ID</td></tr>
+        <tr><td class="p-name">withSystemEvents</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Include system events (default: false)</td></tr>
+        <tr><td class="p-name">pageSize</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>Max statements to return (default: 100)</td></tr>
+        <tr><td class="p-name">pageNumber</td><td class="p-type">number</td><td><span class="p-req opt">opt</span></td><td>Page number for pagination (default: 1)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">traces_db_access</div>
+        <div class="tool-desc">Get database access statistics for a trace run. Shows tables accessed, statement types (SELECT/INSERT/UPDATE), access counts, and timing. Use to identify N+1 query patterns and expensive DB operations.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">id</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Trace run ID</td></tr>
+        <tr><td class="p-name">withSystemEvents</td><td class="p-type">boolean</td><td><span class="p-req opt">opt</span></td><td>Include system DB events (default: false)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">traces_delete</div>
+        <div class="tool-desc">Delete a trace run result. The trace configuration is not affected.</div>
+        <div class="badges"><span class="badge badge-destroy">destructive</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">id</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Trace run ID from <code>traces_list</code></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">traces_delete_config</div>
+        <div class="tool-desc">Delete a trace configuration, stopping future captures.</div>
+        <div class="badges"><span class="badge badge-destroy">destructive</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">id</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Trace configuration ID from <code>traces_create_config</code></td></tr>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ GIT ═══════════════════════════════════════════════ -->
+  <h2 id="git">
+    <span class="section-icon" style="background:rgba(76,175,129,0.12)">🌿</span>
+    gCTS
+    <span class="count">2 tools</span>
+  </h2>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">git_repos</div>
+        <div class="tool-desc">List all gCTS repositories registered on this SAP system.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <em style="color:var(--muted);font-size:13px">No parameters.</em>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">git_pull</div>
+        <div class="tool-desc">Pull from a gCTS repository, importing commits into the SAP system. Used in the cherry-pick pipeline to import transports across systems.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">repoId</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>Repository ID or URL as returned by <code>git_repos</code></td></tr>
+        <tr><td class="p-name">branch</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Branch to pull from (default: current branch)</td></tr>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════ SYSTEM ═══════════════════════════════════════════ -->
+  <h2 id="system">
+    <span class="section-icon" style="background:rgba(122,127,150,0.15)">⚙️</span>
+    System
+    <span class="count">6 tools</span>
+  </h2>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">login</div>
+        <div class="tool-desc">Establish a stateful session with the SAP system. Most tools call this automatically via <code>withSession()</code> — only call explicitly before <code>abap_run</code> which requires a fresh session for the classrun endpoint.</div>
+      </div>
+    </div>
+    <div class="tool-body"><em style="color:var(--muted);font-size:13px">No parameters.</em></div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">healthcheck</div>
+        <div class="tool-desc">Verify connectivity to the SAP system. Returns system ID, login status, and timestamp.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body"><em style="color:var(--muted);font-size:13px">No parameters.</em></div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_get_dump</div>
+        <div class="tool-desc">Retrieve recent ABAP short dumps (ST22). Returns dump list with error text, program, and timestamp. Use after a failed <code>abap_run</code> or to investigate customer-reported short dumps.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">query</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Optional filter — program name, error class, or free text. Omit to get all recent dumps.</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_inactive_objects</div>
+        <div class="tool-desc">List all objects with inactive versions — objects that have been modified but not yet activated. Returns each object with type, name, and user. Use before <code>abap_activate</code> to see what needs activating.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body"><em style="color:var(--muted);font-size:13px">No parameters.</em></div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">abap_annotation_defs</div>
+        <div class="tool-desc">Retrieve all CDS annotation definitions available on this SAP system. Returns the raw XML containing annotation names, types, and allowed values. Useful when writing CDS views to discover valid annotations.</div>
+        <div class="badges"><span class="badge badge-read">read-only</span></div>
+      </div>
+    </div>
+    <div class="tool-body"><em style="color:var(--muted);font-size:13px">No parameters.</em></div>
+  </div>
+
+  <div class="tool">
+    <div class="tool-header">
+      <div>
+        <div class="tool-name">raw_http</div>
+        <div class="tool-desc">Execute a raw HTTP request to the SAP ADT API. Use for operations not covered by other tools — SITO objects (Content-Type: application/json for source writes), SICF path management, or any ADT endpoint without a dedicated tool.</div>
+        <div class="badges"><span class="badge badge-write">write</span></div>
+      </div>
+    </div>
+    <div class="tool-body">
+      <div class="params-label">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+        <tr><td class="p-name">method</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td><div class="enum-vals">GET · POST · PUT · DELETE · PATCH</div></td></tr>
+        <tr><td class="p-name">path</td><td class="p-type">string</td><td><span class="p-req req">req</span></td><td>ADT path starting with <code>/sap/bc/adt/...</code>, including query parameters</td></tr>
+        <tr><td class="p-name">body</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Request body (for POST, PUT, PATCH)</td></tr>
+        <tr><td class="p-name">contentType</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Content-Type header (default: <code>application/xml</code>)</td></tr>
+        <tr><td class="p-name">accept</td><td class="p-type">string</td><td><span class="p-req opt">opt</span></td><td>Accept header (default: <code>application/xml</code>)</td></tr>
+      </table>
+      <div class="note note-danger">
+        <strong>Hard rule:</strong> NEVER use <code>raw_http</code> to POST to lock endpoints (<code>?method=adtLock</code>). Even a failed lock POST leaves a stale ICM session lock with no matching handle, causing every subsequent write to fail with "locked by another" until SM04 intervention. Use <code>abap_set_source</code>, <code>abap_set_class_include</code>, or <code>abap_edit_method</code> for any write operation.
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>Dassian ADT MCP v2.0 &mdash; 53 tools across 14 SAP systems &mdash; Built on <a href="https://github.com/marcellourbani/abap-adt-api" style="color:var(--accent);text-decoration:none">abap-adt-api</a></p>
+  </footer>
+
+</main>
+</body>
+</html>
