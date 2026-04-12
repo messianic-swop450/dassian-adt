@@ -2,10 +2,28 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './BaseHandler.js';
 import type { ToolDefinition } from '../types/tools.js';
 import { formatError } from '../lib/errors.js';
+import { parseServiceBinding } from 'abap-adt-api';
 
 export class RapHandlers extends BaseHandler {
   getTools(): ToolDefinition[] {
     return [
+      {
+        name: 'rap_binding_details',
+        annotations: { readOnlyHint: true },
+        description:
+          'Get the service binding details for a published OData service binding. ' +
+          'Returns the service URL, entity sets, navigation properties, and annotation URL. ' +
+          'Use after rap_publish_binding or to inspect an existing published binding. ' +
+          'For bindings with multiple services, use index to select which service (default: 0).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name:    { type: 'string', description: 'Service binding name, e.g. /DSN/UI_MYSERVICE_O4' },
+            index:   { type: 'number', description: 'Service index (default: 0 for the first service)' }
+          },
+          required: ['name']
+        }
+      },
       {
         name: 'rap_publish_binding',
         description:
@@ -28,8 +46,27 @@ export class RapHandlers extends BaseHandler {
 
   async handle(toolName: string, args: any): Promise<any> {
     switch (toolName) {
+      case 'rap_binding_details': return this.handleBindingDetails(args);
       case 'rap_publish_binding': return this.handlePublishBinding(args);
       default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${toolName}`);
+    }
+  }
+
+  private async handleBindingDetails(args: any): Promise<any> {
+    const encoded = args.name.replace(/\//g, '%2f').toLowerCase();
+    const bindingUrl = `/sap/bc/adt/businessservices/bindings/${encoded}`;
+    try {
+      const h = (this.adtclient as any).h;
+      const response = await this.withSession(() =>
+        h.request(bindingUrl, { headers: { Accept: 'application/*' } })
+      ) as any;
+      const binding = parseServiceBinding(response.body || '');
+      const details = await this.withSession(() =>
+        this.adtclient.bindingDetails(binding, args.index ?? 0)
+      );
+      return this.success({ name: args.name, ...details });
+    } catch (error: any) {
+      this.fail(formatError(`rap_binding_details(${args.name})`, error));
     }
   }
 

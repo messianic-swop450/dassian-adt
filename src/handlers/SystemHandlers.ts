@@ -41,6 +41,24 @@ export class SystemHandlers extends BaseHandler {
         }
       },
       {
+        name: 'abap_inactive_objects',
+        annotations: { readOnlyHint: true },
+        description:
+          'List all objects with inactive versions (objects that have been modified but not yet activated). ' +
+          'Returns each inactive object with its type, name, and user. ' +
+          'Use before abap_activate to see what needs to be activated.',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
+        name: 'abap_annotation_defs',
+        annotations: { readOnlyHint: true },
+        description:
+          'Retrieve all CDS annotation definitions available on this SAP system. ' +
+          'Returns the raw XML containing annotation names, types, and allowed values. ' +
+          'Useful when writing CDS views to discover valid annotations and their structure.',
+        inputSchema: { type: 'object', properties: {} }
+      },
+      {
         name: 'raw_http',
         description:
           'Execute a raw HTTP request to the SAP ADT API. ' +
@@ -89,10 +107,12 @@ export class SystemHandlers extends BaseHandler {
 
   async handle(toolName: string, args: any): Promise<any> {
     switch (toolName) {
-      case 'login':          return this.handleLogin();
-      case 'healthcheck':    return this.handleHealthcheck();
-      case 'abap_get_dump':  return this.handleGetDump(args);
-      case 'raw_http':       return this.handleRawHttp(args);
+      case 'login':                  return this.handleLogin();
+      case 'healthcheck':            return this.handleHealthcheck();
+      case 'abap_get_dump':          return this.handleGetDump(args);
+      case 'abap_inactive_objects':  return this.handleInactiveObjects();
+      case 'abap_annotation_defs':   return this.handleAnnotationDefs();
+      case 'raw_http':               return this.handleRawHttp(args);
       default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${toolName}`);
     }
   }
@@ -164,6 +184,24 @@ export class SystemHandlers extends BaseHandler {
       return this.success({ count: dumps.length, dumps });
     } catch (error: any) {
       this.fail(`abap_get_dump failed: ${error.message || 'Unknown error'}`);
+    }
+  }
+
+  private async handleInactiveObjects(): Promise<any> {
+    try {
+      const records = await this.withSession(() => this.adtclient.inactiveObjects());
+      return this.success({ count: (records as any[]).length, objects: records });
+    } catch (error: any) {
+      this.fail(formatError('abap_inactive_objects', error));
+    }
+  }
+
+  private async handleAnnotationDefs(): Promise<any> {
+    try {
+      const xml = await this.withSession(() => this.adtclient.annotationDefinitions());
+      return this.success({ annotations: xml });
+    } catch (error: any) {
+      this.fail(formatError('abap_annotation_defs', error));
     }
   }
 

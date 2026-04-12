@@ -136,6 +136,41 @@ export class SourceHandlers extends BaseHandler {
         }
       },
       {
+        name: 'abap_pretty_print',
+        annotations: { readOnlyHint: true },
+        description:
+          'Format ABAP source code using the SAP Pretty Printer. ' +
+          'Returns the formatted source. Does not write back to the system — pass the result to abap_set_source if needed.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            source: { type: 'string', description: 'ABAP source code to format' }
+          },
+          required: ['source']
+        }
+      },
+      {
+        name: 'abap_revisions',
+        annotations: { readOnlyHint: true },
+        description:
+          'Get the revision history for an ABAP object (transport-based change log). ' +
+          'Returns revisions with date, author, transport number (version), and version title. ' +
+          'For classes, optionally specify a class include to see its revision history separately.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name:    { type: 'string', description: 'Object name, e.g. /DSN/CL_MY_CLASS or ZMY_PROGRAM' },
+            type:    { type: 'string', description: 'Object type, e.g. CLAS, PROG/P, FUGR/I, DDLS/DF' },
+            include: {
+              type: 'string',
+              description: 'For CLAS only: which include to inspect. Values: definitions, implementations, macros, testclasses, main.',
+              enum: ['definitions', 'implementations', 'macros', 'testclasses', 'main']
+            }
+          },
+          required: ['name', 'type']
+        }
+      },
+      {
         name: 'abap_get_function_group',
         annotations: { readOnlyHint: true },
         description:
@@ -162,6 +197,8 @@ export class SourceHandlers extends BaseHandler {
       case 'abap_set_source':           return this.handleSetSource(args);
       case 'abap_set_class_include':    return this.handleSetClassInclude(args);
       case 'abap_edit_method':          return this.handleEditMethod(args);
+      case 'abap_pretty_print':         return this.handlePrettyPrint(args);
+      case 'abap_revisions':            return this.handleRevisions(args);
       case 'abap_get_function_group':   return this.handleGetFunctionGroup(args);
       default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${toolName}`);
     }
@@ -614,6 +651,29 @@ export class SourceHandlers extends BaseHandler {
         }
       }
       this.fail(formatError(`abap_set_class_include(${name}/${include_type})`, error));
+    }
+  }
+
+  private async handlePrettyPrint(args: any): Promise<any> {
+    try {
+      const formatted = await this.withSession(() =>
+        this.adtclient.prettyPrinter(args.source)
+      ) as string;
+      return this.success({ source: formatted });
+    } catch (error: any) {
+      this.fail(formatError('abap_pretty_print', error));
+    }
+  }
+
+  private async handleRevisions(args: any): Promise<any> {
+    const objectUrl = buildObjectUrl(args.name, args.type);
+    try {
+      const revisions = await this.withSession(() =>
+        this.adtclient.revisions(objectUrl, args.include)
+      );
+      return this.success({ name: args.name, type: args.type, revisions });
+    } catch (error: any) {
+      this.fail(formatError(`abap_revisions(${args.name})`, error));
     }
   }
 

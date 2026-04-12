@@ -9,6 +9,21 @@ export class TestHandlers extends BaseHandler {
   getTools(): ToolDefinition[] {
     return [
       {
+        name: 'abap_create_test_include',
+        description:
+          'Scaffold a test class include (CCAU) for an existing ABAP class. ' +
+          'Creates the test include if it does not already exist, preparing the class for ABAP Unit tests. ' +
+          'After creation, use abap_set_class_include(include_type="testclasses") to write your test code.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name:      { type: 'string', description: 'Class name, e.g. /DSN/CL_MY_CLASS' },
+            transport: { type: 'string', description: 'Transport number. Required for classes outside $TMP.' }
+          },
+          required: ['name']
+        }
+      },
+      {
         name: 'abap_unit_test',
         description:
           'Run ABAP Unit tests for an object and return pass/fail results. ' +
@@ -31,8 +46,51 @@ export class TestHandlers extends BaseHandler {
 
   async handle(toolName: string, args: any): Promise<any> {
     switch (toolName) {
-      case 'abap_unit_test': return this.handleUnitTest(args);
+      case 'abap_create_test_include': return this.handleCreateTestInclude(args);
+      case 'abap_unit_test':           return this.handleUnitTest(args);
       default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${toolName}`);
+    }
+  }
+
+  private async handleCreateTestInclude(args: any): Promise<any> {
+    const objectUrl = buildObjectUrl(args.name, 'CLAS');
+    let lockHandle: string | null = null;
+    try {
+      await this.withSession(async () => {
+        const r = await this.adtclient.lock(objectUrl);
+        lockHandle = r.LOCK_HANDLE;
+        const transport = args.transport || r.CORRNR || '';
+        try {
+          await this.adtclient.createTestInclude(args.name, lockHandle!, transport || undefined);
+        } catch (err: any) {
+          try { await this.adtclient.unLock(objectUrl, lockHandle!); } catch (_) {}
+          lockHandle = null;
+          throw err;
+        }
+        await this.adtclient.unLock(objectUrl, lockHandle!);
+        lockHandle = null;
+      });
+      return this.success({
+        message: `Test include created for ${args.name}. Use abap_set_class_include(include_type="testclasses") to write tests.`,
+        name: args.name
+      });
+    } catch (error: any) {
+      if (lockHandle) {
+        try { await this.adtclient.unLock(objectUrl, lockHandle); } catch (_) {}
+      }
+      const errMsg = (error?.message || '').toLowerCase();
+      if (!args.transport && (errMsg.includes('transport') || errMsg.includes('correction') || errMsg.includes('request'))) {
+        const input = await this.elicitForm(
+          `abap_create_test_include(${args.name}): This class requires a transport. Which transport?`,
+          { transport: { type: 'string', title: 'Transport', description: 'Transport request number (e.g. D25K900161)' } },
+          ['transport']
+        );
+        if (input?.transport) {
+          args.transport = input.transport;
+          return this.handleCreateTestInclude(args);
+        }
+      }
+      this.fail(formatError(`abap_create_test_include(${args.name})`, error));
     }
   }
 

@@ -28,6 +28,8 @@ import { GitHandlers }       from './handlers/GitHandlers.js';
 import { SystemHandlers }    from './handlers/SystemHandlers.js';
 import { TestHandlers }      from './handlers/TestHandlers.js';
 import { RapHandlers }       from './handlers/RapHandlers.js';
+import { TraceHandlers }     from './handlers/TraceHandlers.js';
+import { DdicHandlers }      from './handlers/DdicHandlers.js';
 import { resolveSystemConfigs, AuthConfig } from './lib/auth.js';
 import type { BaseHandler } from './handlers/BaseHandler.js';
 
@@ -134,6 +136,8 @@ function createSystemEntry(
     new SystemHandlers(client),
     new TestHandlers(client),
     new RapHandlers(client),
+    new TraceHandlers(client),
+    new DdicHandlers(client),
   ];
 
   for (const h of handlers) {

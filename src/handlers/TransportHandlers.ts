@@ -99,6 +99,49 @@ export class TransportHandlers extends BaseHandler {
         }
       },
       {
+        name: 'transport_delete',
+        annotations: { destructiveHint: true },
+        description:
+          'Delete a transport request. ' +
+          'WARNING: Irreversible. Only works on modifiable (not yet released) requests. ' +
+          'Only call when explicitly requested.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            transport: { type: 'string', description: 'Transport request number (e.g. D23K900123)' }
+          },
+          required: ['transport']
+        }
+      },
+      {
+        name: 'transport_set_owner',
+        description:
+          'Change the owner of a transport request. ' +
+          'Returns the updated transport header.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            transport: { type: 'string', description: 'Transport request number' },
+            user:      { type: 'string', description: 'New owner user ID (SAP login name)' }
+          },
+          required: ['transport', 'user']
+        }
+      },
+      {
+        name: 'transport_add_user',
+        description:
+          'Add a user to a transport request (gives them edit access). ' +
+          'Returns the updated user list.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            transport: { type: 'string', description: 'Transport request number' },
+            user:      { type: 'string', description: 'SAP user ID to add' }
+          },
+          required: ['transport', 'user']
+        }
+      },
+      {
         name: 'transport_contents',
         annotations: { readOnlyHint: true },
         description:
@@ -118,12 +161,15 @@ export class TransportHandlers extends BaseHandler {
 
   async handle(toolName: string, args: any): Promise<any> {
     switch (toolName) {
-      case 'transport_create':  return this.handleCreate(args);
-      case 'transport_assign':  return this.handleAssign(args);
-      case 'transport_release': return this.handleRelease(args);
-      case 'transport_list':     return this.handleList(args);
-      case 'transport_info':     return this.handleInfo(args);
-      case 'transport_contents': return this.handleContents(args);
+      case 'transport_create':    return this.handleCreate(args);
+      case 'transport_assign':    return this.handleAssign(args);
+      case 'transport_release':   return this.handleRelease(args);
+      case 'transport_list':      return this.handleList(args);
+      case 'transport_info':      return this.handleInfo(args);
+      case 'transport_contents':  return this.handleContents(args);
+      case 'transport_delete':    return this.handleDelete(args);
+      case 'transport_set_owner': return this.handleSetOwner(args);
+      case 'transport_add_user':  return this.handleAddUser(args);
       default: throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${toolName}`);
     }
   }
@@ -490,6 +536,42 @@ export class TransportHandlers extends BaseHandler {
       });
     } catch (error: any) {
       this.fail(formatError(`transport_contents(${args.transport})`, error));
+    }
+  }
+
+  private async handleDelete(args: any): Promise<any> {
+    const confirmed = await this.confirmWithUser(
+      `Delete transport ${args.transport}? This is IRREVERSIBLE.`,
+      { transport: args.transport }
+    );
+    if (!confirmed) this.fail(`transport_delete(${args.transport}): cancelled.`);
+    try {
+      await this.withSession(() => this.adtclient.transportDelete(args.transport));
+      return this.success({ transport: args.transport, deleted: true });
+    } catch (error: any) {
+      this.fail(formatError(`transport_delete(${args.transport})`, error));
+    }
+  }
+
+  private async handleSetOwner(args: any): Promise<any> {
+    try {
+      const result = await this.withSession(() =>
+        this.adtclient.transportSetOwner(args.transport, args.user)
+      );
+      return this.success({ transport: args.transport, owner: args.user, result });
+    } catch (error: any) {
+      this.fail(formatError(`transport_set_owner(${args.transport})`, error));
+    }
+  }
+
+  private async handleAddUser(args: any): Promise<any> {
+    try {
+      const result = await this.withSession(() =>
+        this.adtclient.transportAddUser(args.transport, args.user)
+      );
+      return this.success({ transport: args.transport, user: args.user, result });
+    } catch (error: any) {
+      this.fail(formatError(`transport_add_user(${args.transport})`, error));
     }
   }
 
