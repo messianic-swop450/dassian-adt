@@ -328,10 +328,12 @@ export class ObjectHandlers extends BaseHandler {
       args.transport = this.requireTransport(lockResult, args.transport, args.name);
 
       await this.withSession(async () => {
-        // The library appends ?corrNr=TRANSPORT which some ADT endpoints (e.g. DDLS) reject.
-        // The lock handle already encodes the transport — call DELETE directly without corrNr.
         const h = (this.adtclient as any).h;
-        await h.request(objectUrl, { method: 'DELETE', qs: { lockHandle: lockHandle! } });
+        const qs: Record<string, string> = { lockHandle: lockHandle! };
+        // Some ADT endpoints (e.g. DDLS on certain systems) require corrNr explicitly on DELETE.
+        // Include it when we have a transport — the lock CORRNR (task number) is authoritative.
+        if (args.transport) qs.corrNr = args.transport;
+        await h.request(objectUrl, { method: 'DELETE', qs });
       });
       lockHandle = null;
 
