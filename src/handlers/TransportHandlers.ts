@@ -157,9 +157,9 @@ export class TransportHandlers extends BaseHandler {
       const transportNumber = (result as any)?.transportNumber || result;
       // Resolve the task number — abap_set_source needs the TASK (child), not the REQUEST (parent).
       const taskNumber = await this.resolveTaskNumber(transportNumber as string);
-      // SAP sometimes creates child tasks as Unclassified (X) — classify as Correction (S) always.
-      // Without this, transport_assign silently writes nothing to E071.
-      if (taskNumber && taskNumber !== transportNumber) {
+      // Workbench transports sometimes get child tasks created as Unclassified (X) on certain systems.
+      // Classify as Correction (S) immediately — TOC tasks don't have this problem.
+      if (!isToc && taskNumber && taskNumber !== transportNumber) {
         try {
           await this.classifyTask(taskNumber);
         } catch (_) {
