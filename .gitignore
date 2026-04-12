@@ -4,3 +4,4 @@ node_modules
 coverage
 *.code-workspace
 TEST_RESULTS*.md
+sap-systems.json

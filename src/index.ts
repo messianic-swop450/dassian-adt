@@ -26,13 +26,12 @@ import { DataHandlers }      from './handlers/DataHandlers.js';
 import { QualityHandlers }   from './handlers/QualityHandlers.js';
 import { GitHandlers }       from './handlers/GitHandlers.js';
 import { SystemHandlers }    from './handlers/SystemHandlers.js';
-import { renderLoginPage, renderLoginSuccess } from './auth/loginPage.js';
-import { resolveAuth } from './lib/auth.js';
+import { resolveSystemConfigs, AuthConfig } from './lib/auth.js';
+import type { BaseHandler } from './handlers/BaseHandler.js';
 
 config({ path: path.resolve(__dirname, '../.env') });
 
 // ─── MCP Prompts ─────────────────────────────────────────────────────────────
-// Pre-built workflows callable as slash commands from Claude Code.
 
 interface PromptDef {
   name: string;
@@ -105,64 +104,113 @@ Report a summary of what was fixed.`
   },
 ];
 
-export class AbapAdtServer extends Server {
-  private adtClient: ADTClient;
-  private sourceHandlers:    SourceHandlers;
-  private objectHandlers:    ObjectHandlers;
-  private runHandlers:       RunHandlers;
-  private transportHandlers: TransportHandlers;
-  private dataHandlers:      DataHandlers;
-  private qualityHandlers:   QualityHandlers;
-  private gitHandlers:       GitHandlers;
-  private systemHandlers:    SystemHandlers;
+// ─── Per-system handler bundle ────────────────────────────────────────────────
 
-  constructor(sapUrl?: string, sapUser?: string, sapPassword?: string, sapClient?: string, sapLanguage?: string) {
+interface SystemEntry {
+  auth: AuthConfig;
+  client: ADTClient;
+  handlers: BaseHandler[];
+}
+
+function createSystemEntry(
+  auth: AuthConfig,
+  elicitFn: (params: any) => Promise<{ action: string; content?: Record<string, any> }>,
+  notifyFn: (level: 'info' | 'warning' | 'error', message: string) => Promise<void>,
+  samplingFn: (systemPrompt: string, userMessage: string, maxTokens?: number) => Promise<string>
+): SystemEntry {
+  const client = new ADTClient(auth.url, auth.user, auth.password, auth.client, auth.language);
+  client.stateful = session_types.stateful;
+
+  const handlers: BaseHandler[] = [
+    new SourceHandlers(client),
+    new ObjectHandlers(client),
+    new RunHandlers(client),
+    new TransportHandlers(client),
+    new DataHandlers(client),
+    new QualityHandlers(client),
+    new GitHandlers(client),
+    new SystemHandlers(client),
+  ];
+
+  for (const h of handlers) {
+    h.setElicit(elicitFn);
+    h.setNotify(notifyFn);
+    h.setSampling(samplingFn);
+  }
+
+  return { auth, client, handlers };
+}
+
+// ─── sap_system_id injection ─────────────────────────────────────────────────
+
+/**
+ * When multiple systems are configured, inject a required sap_system_id property
+ * into every tool's inputSchema so the LLM knows to pass it.
+ */
+function injectSystemIdParam(tools: any[], systemIds: string[], defaultId: string): any[] {
+  const systemIdProp = {
+    type: 'string',
+    description: `SAP system to target. Available: ${systemIds.join(', ')}. Default: ${defaultId}.`,
+    enum: systemIds,
+    default: defaultId,
+  };
+
+  return tools.map(tool => {
+    const schema = tool.inputSchema as any;
+    return {
+      ...tool,
+      inputSchema: {
+        ...schema,
+        properties: { sap_system_id: systemIdProp, ...(schema.properties || {}) },
+        // Not required — callers may omit to use the default
+      }
+    };
+  });
+}
+
+// ─── Main server class ────────────────────────────────────────────────────────
+
+export class AbapAdtServer extends Server {
+  private systems: Map<string, SystemEntry>;
+  private defaultSystemId: string;
+
+  /** Single-system constructor (HTTP per-user mode: explicit credentials). */
+  static fromBasicAuth(
+    url: string,
+    user: string,
+    password: string,
+    client?: string,
+    language?: string
+  ): AbapAdtServer {
+    const auth: AuthConfig = {
+      id: 'default',
+      url,
+      user,
+      password,
+      client: client ?? '',
+      language: language ?? 'EN',
+      authType: 'basic',
+    };
+    return new AbapAdtServer([[auth], 'default']);
+  }
+
+  constructor(resolved: [AuthConfig[], string]) {
     super(
       { name: 'dassian-adt', version: '2.0.0' },
       { capabilities: { tools: {}, logging: {}, prompts: {} } }
     );
 
-    // If explicit credentials are provided (HTTP per-user mode), use them directly.
-    // Otherwise resolve from environment (supports basic, service key, and OAuth).
-    let url: string, user: string, password: string | (() => Promise<string>), client: string, language: string;
-    if (sapUrl && sapUser && sapPassword) {
-      url = sapUrl;
-      user = sapUser;
-      password = sapPassword;
-      client = sapClient ?? '';
-      language = sapLanguage ?? 'EN';
-    } else {
-      const auth = resolveAuth();
-      url = sapUrl || auth.url;
-      user = sapUser || auth.user;
-      password = sapPassword || auth.password;
-      client = sapClient ?? auth.client;
-      language = sapLanguage ?? auth.language;
-    }
+    const [authConfigs, defaultId] = resolved;
+    this.defaultSystemId = defaultId;
+    this.systems = new Map();
 
-    this.adtClient = new ADTClient(url, user, password, client, language);
-    this.adtClient.stateful = session_types.stateful;
-
-    this.sourceHandlers    = new SourceHandlers(this.adtClient);
-    this.objectHandlers    = new ObjectHandlers(this.adtClient);
-    this.runHandlers       = new RunHandlers(this.adtClient);
-    this.transportHandlers = new TransportHandlers(this.adtClient);
-    this.dataHandlers      = new DataHandlers(this.adtClient);
-    this.qualityHandlers   = new QualityHandlers(this.adtClient);
-    this.gitHandlers       = new GitHandlers(this.adtClient);
-    this.systemHandlers    = new SystemHandlers(this.adtClient);
-
-    const elicitFn = (params: any) => this.elicitInput(params);
-
-    const notifyFn = async (level: 'info' | 'warning' | 'error', message: string) => {
+    const elicitFn  = (params: any) => this.elicitInput(params);
+    const notifyFn  = async (level: 'info' | 'warning' | 'error', message: string) => {
       await this.sendLoggingMessage({ level, data: message });
     };
-
     const samplingFn = async (systemPrompt: string, userMessage: string, maxTokens = 200): Promise<string> => {
       const caps = this.getClientCapabilities();
-      if (!(caps as any)?.sampling) {
-        throw new Error('Client does not support sampling');
-      }
+      if (!(caps as any)?.sampling) throw new Error('Client does not support sampling');
       const result = await this.createMessage({
         messages: [{ role: 'user', content: { type: 'text', text: userMessage } }],
         systemPrompt,
@@ -172,27 +220,36 @@ export class AbapAdtServer extends Server {
       return result.content.type === 'text' ? result.content.text : '';
     };
 
-    for (const handler of this.allHandlers()) {
-      handler.setElicit(elicitFn);
-      handler.setNotify(notifyFn);
-      handler.setSampling(samplingFn);
+    for (const auth of authConfigs) {
+      this.systems.set(auth.id, createSystemEntry(auth, elicitFn, notifyFn, samplingFn));
     }
 
     this.setupHandlers();
   }
 
-  private allHandlers() {
-    return [
-      this.sourceHandlers, this.objectHandlers, this.runHandlers,
-      this.transportHandlers, this.dataHandlers, this.qualityHandlers,
-      this.gitHandlers, this.systemHandlers,
-    ];
+  private getSystem(id?: string): SystemEntry {
+    const target = id ?? this.defaultSystemId;
+    const entry = this.systems.get(target);
+    if (!entry) {
+      const available = [...this.systems.keys()].join(', ');
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `Unknown sap_system_id "${target}". Available: ${available}`
+      );
+    }
+    return entry;
   }
 
   private setupHandlers() {
-    this.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: this.allHandlers().flatMap(h => h.getTools())
-    }));
+    const systemIds    = [...this.systems.keys()];
+    const multiSystem  = systemIds.length > 1;
+
+    this.setRequestHandler(ListToolsRequestSchema, async () => {
+      // All systems expose the same tool set — use the default system's schema.
+      const entry = this.getSystem();
+      const tools = entry.handlers.flatMap(h => h.getTools());
+      return { tools: multiSystem ? injectSystemIdParam(tools, systemIds, this.defaultSystemId) : tools };
+    });
 
     this.setRequestHandler(ListPromptsRequestSchema, async () => ({
       prompts: PROMPTS.map(p => ({ name: p.name, description: p.description }))
@@ -201,18 +258,24 @@ export class AbapAdtServer extends Server {
     this.setRequestHandler(GetPromptRequestSchema, async (request) => {
       const p = PROMPTS.find(p => p.name === request.params.name);
       if (!p) throw new McpError(ErrorCode.InvalidRequest, `Unknown prompt: ${request.params.name}`);
-      const args = request.params.arguments || {};
-      return { messages: p.messages(args) };
+      return { messages: p.messages(request.params.arguments || {}) };
     });
 
     this.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
+      const { name, arguments: rawArgs } = request.params;
+      const args = { ...(rawArgs || {}) };
 
-      for (const handler of this.allHandlers()) {
+      // Extract and remove sap_system_id before dispatching to handler
+      const systemId = args.sap_system_id as string | undefined;
+      delete args.sap_system_id;
+
+      const entry = this.getSystem(systemId);
+
+      for (const handler of entry.handlers) {
         const tools = handler.getTools().map(t => t.name);
         if (tools.includes(name)) {
           try {
-            const result = await handler.validateAndHandle(name, args || {});
+            const result = await handler.validateAndHandle(name, args);
             if (result?.content) return result;
             return {
               content: [{
@@ -231,264 +294,131 @@ export class AbapAdtServer extends Server {
     });
   }
 
-  /** Run in stdio mode (default). Requires SAP_USER/SAP_PASSWORD in env. */
+  /** Run in stdio mode. Reads SAP_SYSTEMS / SAP_SYSTEMS_FILE or falls back to single-system env vars. */
   async runStdio() {
     const transport = new StdioServerTransport();
     await this.connect(transport);
-    const clientCaps = this.getClientCapabilities();
-    console.error('dassian-adt v2.0 running on stdio');
-    console.error('Client capabilities:', JSON.stringify(clientCaps, null, 2));
+    const systemIds = [...this.systems.keys()];
+    console.error(`dassian-adt v2.0 running on stdio — ${systemIds.length} system(s): ${systemIds.join(', ')}`);
+    console.error(`Default system: ${this.defaultSystemId}`);
+    console.error('Client capabilities:', JSON.stringify(this.getClientCapabilities(), null, 2));
 
     process.on('SIGINT',  async () => { await this.close(); process.exit(0); });
     process.on('SIGTERM', async () => { await this.close(); process.exit(0); });
   }
 }
 
-// ─── HTTP mode: per-user auth via browser login page ────────────────────────
+// ─── HTTP mode: service-account MCP server ───────────────────────────────────
+//
+// All systems use service accounts (Entra ID, XSUAA, or basic).
+// Credentials are resolved once at startup from SAP_SYSTEMS_FILE / SAP_SYSTEMS
+// (or single-system env vars as fallback).
+// Each MCP session gets its own AbapAdtServer instance with pre-resolved configs.
+//
+// Optional auth:
+//   MCP_API_KEY — require "Authorization: Bearer <key>" on all MCP requests.
+//                 Set this when the server is internet-facing.
 
 interface HttpSession {
   transport: StreamableHTTPServerTransport;
   server: AbapAdtServer;
 }
 
-/** Pending sessions waiting for the user to log in via the browser. */
-interface PendingSession {
-  transport: StreamableHTTPServerTransport;
-  sessionId: string;
-}
-
-function parseFormBody(req: IncomingMessage): Promise<Record<string, string>> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', () => {
-      const body = Buffer.concat(chunks).toString();
-      const params: Record<string, string> = {};
-      for (const pair of body.split('&')) {
-        const [key, val] = pair.split('=').map(decodeURIComponent);
-        if (key) params[key] = val || '';
-      }
-      resolve(params);
-    });
-    req.on('error', reject);
-  });
-}
-
 async function runHttp() {
-  const sapUrl = process.env.SAP_URL;
-  if (!sapUrl) throw new Error('SAP_URL is required even in HTTP mode (all users connect to the same SAP system).');
-
-  const port = parseInt(process.env.MCP_HTTP_PORT || '3000', 10);
+  const port    = parseInt(process.env.MCP_HTTP_PORT || '3000', 10);
   const mcpPath = process.env.MCP_HTTP_PATH || '/mcp';
-  const sapClient = process.env.SAP_CLIENT;
-  const sapLanguage = process.env.SAP_LANGUAGE;
+  const apiKey  = process.env.MCP_API_KEY;  // optional bearer token
 
-  // Shared service account (optional fallback — if SAP_USER + SAP_PASSWORD are set, skip login page)
-  const sharedUser = process.env.SAP_USER;
-  const sharedPass = process.env.SAP_PASSWORD;
-  const requireLogin = !sharedUser || !sharedPass;
+  // Resolve all system configs once at startup — not per session.
+  const [authConfigs, defaultId] = await resolveSystemConfigs();
+  const systemIds = authConfigs.map(a => a.id);
 
   const sessions = new Map<string, HttpSession>();
-  // Pending sessions: MCP handshake done, but user hasn't logged in yet
-  const pendingSessions = new Map<string, PendingSession>();
-  // Session → SAP credentials (set after user logs in via /login)
-  const sessionCredentials = new Map<string, { user: string; password: string }>();
 
-  if (requireLogin) {
-    console.error('[HTTP] Per-user auth mode: users will log in via /login page');
-  } else {
-    console.error(`[HTTP] Shared service account mode: ${sharedUser}`);
-  }
+  console.error(`dassian-adt v2.0 HTTP mode — ${systemIds.length} system(s): ${systemIds.join(', ')}`);
+  console.error(`Default system: ${defaultId}`);
+  if (apiKey) console.error('MCP endpoint protected by API key.');
 
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const reqUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
-    // CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id, Authorization');
     res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id');
 
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-    // ── Health check ──
+    // ── Health check (unauthenticated) ──────────────────────────────────────
     if (reqUrl.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
         sessions: sessions.size,
-        pendingLogins: pendingSessions.size,
-        authMode: requireLogin ? 'per-user' : 'shared'
+        systems: systemIds,
+        defaultSystem: defaultId,
       }));
       return;
     }
 
-    // ── Login page (GET) ──
-    if (reqUrl.pathname === '/login' && req.method === 'GET') {
-      const sessionId = reqUrl.searchParams.get('session') || '';
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(renderLoginPage(sapUrl!, sessionId));
-      return;
-    }
-
-    // ── Login submit (POST) ──
-    if (reqUrl.pathname === '/login' && req.method === 'POST') {
-      const body = await parseFormBody(req);
-      const sessionId = body.session || '';
-      const username = body.username?.trim();
-      const password = body.password;
-
-      if (!username || !password) {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(renderLoginPage(sapUrl!, sessionId, 'Username and password are required.'));
-        return;
-      }
-
-      // Validate credentials by attempting an ADT login
-      try {
-        const testClient = new ADTClient(sapUrl!, username, password, sapClient, sapLanguage);
-        testClient.stateful = session_types.stateful;
-        await testClient.login();
-        await testClient.logout();
-      } catch (e: any) {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(renderLoginPage(sapUrl!, sessionId, `SAP login failed: ${e.message || 'Invalid credentials'}`));
-        return;
-      }
-
-      // Store credentials for this session
-      sessionCredentials.set(sessionId, { user: username, password });
-      console.error(`[HTTP] User ${username} authenticated for session ${sessionId}`);
-
-      // If there's a pending session, promote it to active
-      const pending = pendingSessions.get(sessionId);
-      if (pending) {
-        try {
-          const server = new AbapAdtServer(sapUrl!, username, password, sapClient, sapLanguage);
-          await server.connect(pending.transport);
-          sessions.set(sessionId, { transport: pending.transport, server });
-          pendingSessions.delete(sessionId);
-          console.error(`[HTTP] Session ${sessionId} activated for ${username} (${sessions.size} active)`);
-        } catch (err: any) {
-          console.error(`[HTTP] Failed to activate session ${sessionId}: ${err.message}`);
-        }
-      }
-
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(renderLoginSuccess());
-      return;
-    }
-
-    // ── MCP endpoint ──
+    // ── Route to MCP endpoint ───────────────────────────────────────────────
     if (reqUrl.pathname !== mcpPath && !reqUrl.pathname.startsWith(mcpPath + '?')) {
       res.writeHead(404);
       res.end('Not found');
       return;
     }
 
+    // ── Optional API key check ──────────────────────────────────────────────
+    if (apiKey) {
+      const authHeader = req.headers['authorization'] || '';
+      const provided = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+      if (provided !== apiKey) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized', message: 'Valid Authorization: Bearer <MCP_API_KEY> required.' }));
+        return;
+      }
+    }
+
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
-    // Existing active session
+    // ── Existing session ────────────────────────────────────────────────────
     if (sessionId && sessions.has(sessionId)) {
       await sessions.get(sessionId)!.transport.handleRequest(req, res);
       return;
     }
 
-    // Existing pending session — user hasn't logged in yet.
-    // Allow DELETE through so the MCP client can terminate the session cleanly
-    // (triggers onclose, which cleans up pendingSessions/sessionCredentials).
-    // All other methods get a 401 directing the user to the login page.
-    if (sessionId && pendingSessions.has(sessionId)) {
-      if (req.method === 'DELETE') {
-        const pending = pendingSessions.get(sessionId)!;
-        await pending.transport.handleRequest(req, res);
-        return;
-      }
-      const loginUrl = `/login?session=${encodeURIComponent(sessionId)}`;
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        error: 'Authentication required',
-        message: `SAP login required. Open ${loginUrl} in your browser to connect, then retry.`,
-        loginUrl
-      }));
-      return;
-    }
-
-    // Invalid session
     if (sessionId && !sessions.has(sessionId)) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Session not found' }));
       return;
     }
 
-    // New session
+    // ── New session ─────────────────────────────────────────────────────────
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
     });
 
-    if (!requireLogin) {
-      // Shared service account — create server immediately
-      const server = new AbapAdtServer(sapUrl!, sharedUser!, sharedPass!, sapClient, sapLanguage);
-      await server.connect(transport);
-      transport.onclose = () => {
-        if (transport.sessionId) {
-          sessions.delete(transport.sessionId);
-          console.error(`[HTTP] Session closed: ${transport.sessionId} (${sessions.size} active)`);
-        }
-      };
-      await transport.handleRequest(req, res);
+    const server = new AbapAdtServer([authConfigs, defaultId]);
+    await server.connect(transport);
+
+    transport.onclose = () => {
       if (transport.sessionId) {
-        sessions.set(transport.sessionId, { transport, server });
-        console.error(`[HTTP] New session: ${transport.sessionId} [${sharedUser}] (${sessions.size} active)`);
+        sessions.delete(transport.sessionId);
+        console.error(`[HTTP] Session closed: ${transport.sessionId} (${sessions.size} active)`);
       }
-    } else {
-      // Per-user auth — the MCP handshake needs a real server to negotiate the session ID.
-      // Check if the user already authenticated (login-before-connect race).
-      // If not, use a temporary server for the handshake, then park the session as pending.
-      // Subsequent requests on a pending session get a clear 401 + login URL (handled above).
+    };
 
-      // For the initial handshake we need a connected server. The handshake itself (initialize,
-      // listTools) doesn't touch SAP, so dummy creds are fine for this single request.
-      const handshakeServer = new AbapAdtServer(sapUrl!, '_HANDSHAKE_', '_HANDSHAKE_', sapClient, sapLanguage);
-      await handshakeServer.connect(transport);
+    await transport.handleRequest(req, res);
 
-      transport.onclose = () => {
-        if (transport.sessionId) {
-          sessions.delete(transport.sessionId);
-          pendingSessions.delete(transport.sessionId);
-          sessionCredentials.delete(transport.sessionId);
-          console.error(`[HTTP] Session closed: ${transport.sessionId}`);
-        }
-      };
-
-      await transport.handleRequest(req, res);
-
-      if (transport.sessionId) {
-        // Check if user already logged in (race condition: login before MCP connect)
-        const creds = sessionCredentials.get(transport.sessionId);
-        if (creds) {
-          const realServer = new AbapAdtServer(sapUrl!, creds.user, creds.password, sapClient, sapLanguage);
-          await realServer.connect(transport);
-          sessions.set(transport.sessionId, { transport, server: realServer });
-          console.error(`[HTTP] New session: ${transport.sessionId} [${creds.user}] (${sessions.size} active)`);
-        } else {
-          pendingSessions.set(transport.sessionId, { transport, sessionId: transport.sessionId });
-          console.error(`[HTTP] Pending login: ${transport.sessionId} — user must visit /login?session=${transport.sessionId}`);
-        }
-      }
+    if (transport.sessionId) {
+      sessions.set(transport.sessionId, { transport, server });
+      console.error(`[HTTP] New session: ${transport.sessionId} (${sessions.size} active)`);
     }
   });
 
   httpServer.listen(port, () => {
-    console.error(`dassian-adt v2.0 running on http://0.0.0.0:${port}${mcpPath}`);
-    console.error(`Login page: http://0.0.0.0:${port}/login`);
+    console.error(`MCP endpoint: http://0.0.0.0:${port}${mcpPath}`);
     console.error(`Health check: http://0.0.0.0:${port}/health`);
-    console.error(`SAP system: ${sapUrl}`);
-    if (requireLogin) {
-      console.error('Auth mode: per-user (users log in via /login page)');
-    } else {
-      console.error(`Auth mode: shared service account (${sharedUser})`);
-    }
   });
 
   process.on('SIGINT',  () => { httpServer.close(); process.exit(0); });
@@ -502,7 +432,7 @@ const mode = process.env.MCP_TRANSPORT || 'stdio';
 if (mode === 'http') {
   runHttp().catch(console.error);
 } else {
-  // Stdio mode — requires SAP_USER + SAP_PASSWORD in env
-  const server = new AbapAdtServer();
-  server.runStdio().catch(console.error);
+  resolveSystemConfigs()
+    .then(resolved => new AbapAdtServer(resolved).runStdio())
+    .catch(console.error);
 }
