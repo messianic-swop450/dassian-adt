@@ -133,6 +133,10 @@ export class TransportHandlers extends BaseHandler {
     // package is optional — when omitted SAP derives it from the anchor object's REF URL.
     // Passing a wrong package causes "Error during deserialization" from SAP.
     const devclass = args.package || '';
+    // SAP transport descriptions are capped at 60 characters — longer strings cause "deserialization" errors.
+    const description: string = args.description.length > 60
+      ? args.description.slice(0, 60)
+      : args.description;
     // ADTClient.createTransport hardcodes OPERATION="I" (Workbench/K).
     // For Transport of Copies (TOC), bypass it and call the lower-level function with OPERATION="T".
     const isToc = args.transportType === 'toc';
@@ -143,11 +147,11 @@ export class TransportHandlers extends BaseHandler {
         const transportApi = require('abap-adt-api/build/api/transports.js');
         const h = (this.adtclient as any).h;
         result = await this.withSession(() =>
-          transportApi.createTransport(h, sourceUrl, args.description, devclass, 'T')
+          transportApi.createTransport(h, sourceUrl, description, devclass, 'T')
         );
       } else {
         result = await this.withSession(() =>
-          this.adtclient.createTransport(sourceUrl, args.description, devclass)
+          this.adtclient.createTransport(sourceUrl, description, devclass)
         );
       }
       const transportNumber = (result as any)?.transportNumber || result;
@@ -173,10 +177,19 @@ export class TransportHandlers extends BaseHandler {
       });
     } catch (error: any) {
       const msg = String(error?.message || error || '');
+      if (/specify a package/i.test(msg)) {
+        this.fail(
+          `transport_create failed: SAP requires a package for this object — add the package parameter (e.g. package: "/DSN/MYPACKAGE"). ` +
+          `Use abap_object_info to look up the object's package if unknown.`
+        );
+      }
       if (/deserialization/i.test(msg)) {
         this.fail(
-          `transport_create failed: SAP rejected the request — most likely the package name is wrong or the anchor object does not exist. ` +
-          `Try omitting the package parameter and let SAP derive it from the object. Original: ${msg}`
+          `transport_create failed: SAP rejected the anchor object. Common causes: ` +
+          `(1) object does not exist on this system, ` +
+          `(2) wrong package name, ` +
+          `(3) PROG includes (PROG/I) are not valid anchors — use the parent program (PROG/P) or a class instead. ` +
+          `Original: ${msg}`
         );
       }
       this.fail(formatError('transport_create', error));
