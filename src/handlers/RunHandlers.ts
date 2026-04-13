@@ -215,6 +215,7 @@ ENDCLASS.`;
           if (deleteIt) {
             try {
               const delLock = await this.adtclient.lock(classUrl);
+              if (delLock.CORRNR) { try { await this.classifyTask(delLock.CORRNR); } catch (_) {} }
               await this.adtclient.deleteObject(classUrl, delLock.LOCK_HANDLE);
             } catch (_) {}
             // Retry creation
@@ -234,6 +235,10 @@ ENDCLASS.`;
       // Lock → write source → unlock
       const lockResult = await this.adtclient.lock(classUrl);
       lockHandle = lockResult.LOCK_HANDLE;
+      // Classify any auto-created workbench task as Correction — prevents orphaned Unclassified tasks.
+      if (lockResult.CORRNR) {
+        try { await this.classifyTask(lockResult.CORRNR); } catch (_) {}
+      }
 
       const source = this.buildClassSource(className, args.methodBody, methodName);
       await this.adtclient.setObjectSource(sourceUrl, source, lockHandle);
@@ -329,6 +334,7 @@ ENDCLASS.`;
           this.adtclient.stateful = session_types.stateful;
           await this.adtclient.login();
           const deleteLock = await this.adtclient.lock(classUrl);
+          if (deleteLock.CORRNR) { try { await this.classifyTask(deleteLock.CORRNR); } catch (_) {} }
           await this.adtclient.deleteObject(classUrl, deleteLock.LOCK_HANDLE);
         } catch (_) {
           // Best-effort — if cleanup fails, the class stays in $TMP.

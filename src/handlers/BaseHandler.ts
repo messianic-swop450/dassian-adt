@@ -343,6 +343,22 @@ export abstract class BaseHandler {
   }
 
   /**
+   * Classify a transport task as Correction (TRFUNCTION=S).
+   * Unclassified tasks (X) silently discard all E071 assignments — this fixes that.
+   * Call after any lock() that returns a CORRNR to prevent orphaned Unclassified tasks.
+   */
+  protected async classifyTask(taskNumber: string): Promise<void> {
+    const h = (this.adtclient as any).h;
+    await this.withSession(() =>
+      h.request(`/sap/bc/adt/cts/transportrequests/${taskNumber}`, {
+        method: 'PUT',
+        headers: { Accept: 'application/*' },
+        body: `<?xml version="1.0" encoding="ASCII"?><tm:root xmlns:tm="http://www.sap.com/cts/adt/tm" tm:number="${taskNumber}" tm:useraction="classify" tm:trfunction="S"/>`
+      })
+    );
+  }
+
+  /**
    * Validate required parameters from the tool schema, then dispatch to the handler.
    * This prevents "Cannot read properties of undefined" crashes by checking required
    * fields BEFORE any handler logic runs — one guard for all 25 tools.
