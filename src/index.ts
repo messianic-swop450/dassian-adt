@@ -333,7 +333,7 @@ interface HttpSession {
 }
 
 async function runHttp() {
-  const port    = parseInt(process.env.MCP_HTTP_PORT || '3000', 10);
+  const port    = parseInt(process.env.PORT || process.env.MCP_HTTP_PORT || '3000', 10);
   const mcpPath = process.env.MCP_HTTP_PATH || '/mcp';
   const apiKey  = process.env.MCP_API_KEY;  // optional bearer token
 
